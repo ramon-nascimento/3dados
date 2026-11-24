@@ -19,8 +19,12 @@ afterEach(() => {
 });
 
 /** Motor com efeitos e um registro, na ordem, de eventos e efeitos mostrados. */
-function setup(effects: EffectsOptions = { level: 'full' }, seed = 11) {
-  const harness = createHarness(physics, { seed, effects });
+function setup(
+  effects: EffectsOptions = { level: 'full' },
+  seed = 11,
+  concurrency: 'queue' | 'replace' = 'queue',
+) {
+  const harness = createHarness(physics, { seed, effects, concurrency });
   const layer = harness.engine.effects as DiceEffects;
   const shown: { effect: string; dieIds: readonly string[]; at: number }[] = [];
   const spawn = layer.spawnOnDice.bind(layer);
@@ -262,7 +266,8 @@ describe('descarte', () => {
   it.each(['full', 'reduced'] as const)(
     'nova rolagem, cancelar, limpar e destruir liberam os efeitos (%s)',
     async (level) => {
-      const { engine, renderer, play, runFrames, tick } = setup({ level });
+      // `replace`: a rolagem nova interrompe a anterior no meio da animação.
+      const { engine, renderer, play, runFrames, tick } = setup({ level }, 11, 'replace');
       const balanced = () => {
         const stats = engine.effects.getStats();
         return stats.created === stats.disposed && stats.active === 0;

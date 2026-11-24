@@ -18,16 +18,9 @@ import {
   type EffectPreset,
   type EffectStats,
   type EffectTriggerOptions,
+  type EffectsEnvironment,
   type EffectsOptions,
 } from './types';
-
-/** O que os efeitos precisam da plataforma. No navegador: {@link browserEffectsEnvironment}. */
-export interface EffectsEnvironment {
-  /** Se o sistema pede menos movimento (`prefers-reduced-motion: reduce`). */
-  prefersReducedMotion(): boolean;
-  /** Chama `callback` quando a preferência muda. Devolve a remoção. */
-  onReducedMotionChange(callback: () => void): () => void;
-}
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 

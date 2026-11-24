@@ -307,6 +307,103 @@
           </form>
         </section>
 
+        <section class="panel" aria-labelledby="integration-title">
+          <h2 id="integration-title">Integração</h2>
+          <form class="form" data-testid="integration-form">
+            <p class="hint">
+              Um servidor de VTT simulado, sem backend: decide os valores, numera as mensagens da
+              sala <code>mesa-1</code> e as entrega ao motor por <code>engine.remote.receive</code>.
+            </p>
+            <div class="pair">
+              <label>
+                Jogador
+                <select data-testid="remote-player">
+                  <option value="ana">Ana</option>
+                  <option value="bruno">Bruno</option>
+                  <option value="mestre">Mestre</option>
+                </select>
+              </label>
+              <label>
+                Visibilidade
+                <select data-testid="remote-visibility">
+                  <option value="public">public</option>
+                  <option value="private">private</option>
+                  <option value="blind">blind</option>
+                </select>
+              </label>
+            </div>
+            <div class="pair">
+              <label>
+                Dado
+                <select data-testid="remote-type"></select>
+              </label>
+              <label>
+                Quantidade
+                <input type="number" min="1" max="10" value="2" data-testid="remote-count" />
+              </label>
+            </div>
+            <div class="pair">
+              <label>
+                Latência mín. (ms)
+                <input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value="50"
+                  data-testid="remote-latency-min"
+                />
+              </label>
+              <label>
+                Latência máx. (ms)
+                <input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value="600"
+                  data-testid="remote-latency-max"
+                />
+              </label>
+            </div>
+            <label class="inline">
+              <input type="checkbox" data-testid="remote-duplicate" />
+              Entregar cada mensagem duas vezes
+            </label>
+            <div class="effect-buttons">
+              <button type="button" class="primary" data-testid="remote-send">Rolar</button>
+              <button type="button" data-testid="remote-burst">Fora de ordem</button>
+              <button type="button" data-testid="remote-resend">Repetir última</button>
+              <button type="button" data-testid="remote-cancel">Cancelar última</button>
+              <button type="button" data-testid="remote-cancel-first">Cancelar antes</button>
+              <button type="button" data-testid="remote-clear">Limpar mesa</button>
+              <button type="button" data-testid="remote-invalid">Sem valores</button>
+              <button type="button" data-testid="remote-log-clear">Limpar registro</button>
+            </div>
+            <dl class="readout">
+              <dt>Recebidas</dt>
+              <dd data-testid="remote-stat-received">—</dd>
+              <dt>Aplicadas</dt>
+              <dd data-testid="remote-stat-applied">—</dd>
+              <dt>Repetidas</dt>
+              <dd data-testid="remote-stat-duplicate">—</dd>
+              <dt>Obsoletas</dt>
+              <dd data-testid="remote-stat-stale">—</dd>
+              <dt>Canceladas antes</dt>
+              <dd data-testid="remote-stat-cancelled">—</dd>
+              <dt>Recusadas</dt>
+              <dd data-testid="remote-stat-rejected">—</dd>
+              <dt>Na mesa</dt>
+              <dd data-testid="remote-table">—</dd>
+              <dt>Na fila</dt>
+              <dd data-testid="remote-queue">—</dd>
+            </dl>
+            <ol class="remote-log" data-testid="remote-log" aria-live="polite"></ol>
+            <p class="hint">
+              Repetidas e obsoletas são descartadas; um cancelamento que chega antes do pedido
+              impede a rolagem. Com a fila, cada rolagem espera a anterior terminar.
+            </p>
+          </form>
+        </section>
+
         <section class="panel" aria-labelledby="display-title">
           <h2 id="display-title">Exibição</h2>
           <div class="form">
@@ -328,6 +425,13 @@
                 </select>
               </label>
             </div>
+            <label>
+              Rolagens simultâneas
+              <select data-testid="concurrency-select">
+                <option value="queue">Fila (padrão)</option>
+                <option value="replace">Substituir a anterior</option>
+              </select>
+            </label>
             <p class="hint">
               São opções de criação do motor: mudar recarrega a página. Qualidade efetiva:
               <strong data-testid="quality-effective">—</strong>.

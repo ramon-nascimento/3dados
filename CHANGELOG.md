@@ -4,6 +4,40 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.8.0] — 2026-11-24
+
+Etapa 8 — API e integração.
+
+### Adicionado
+
+- Mensagens de um servidor externo: `engine.remote.receive(mensagem)` aceita um `RollEnvelope` (`roll.requested`, `roll.cancelled`, `table.cleared`, com versão de protocolo, sala, jogador, sequência e instante de envio) e devolve um recibo (`applied`, `duplicate`, `stale`, `cancelled` ou `rejected`, com o motivo). Nunca lança.
+- Tratamento de mensagens repetidas, de pedidos atrasados ou anteriores a uma limpeza, de cancelamentos que chegam antes do pedido ou depois do fim, e, opcionalmente, de mensagens velhas (`remote.maxAgeMs`). Buracos na sequência não bloqueiam a mesa. `engine.remote.reset(roomId?)` e `engine.remote.getStats()`.
+- Fila de rolagens: `concurrency: 'queue'` (padrão) com `queue.maxPending` e `queue.holdMs` (tempo mínimo em que o resultado fica à vista), ou `concurrency: 'replace'`.
+- `engine.getState()` (rolagem ativa, fila, mesa, opções, áudio e efeitos) e `engine.getStats()` (rolagens, pré-simulação, mensagens, áudio e efeitos), serializáveis.
+- Código de erro `INVALID_MESSAGE` e motivo de cancelamento `remote`. `metadata.sequence` e `metadata.sentAt` nas rolagens remotas.
+- Exportados `PROTOCOL_VERSION`, `REMOTE_LIMITS`, `REMOTE_MESSAGE_TYPES`, `ROLL_VISIBILITIES`, `ROLL_CONCURRENCY`, `ROLL_QUEUE_LIMITS`, `parseEnvelope` e os tipos do protocolo, do estado e das estatísticas.
+- Projetos de exemplo em `examples/javascript` e `examples/typescript` (Vite), e `npm run test:consumer`, que empacota a biblioteca, instala o pacote nos exemplos fora do repositório, compila e testa no navegador.
+- Playground: painel de integração com um servidor simulado (latência, repetição, rajada em ordem inversa, cancelamento antes do pedido, limpeza e mensagem inválida), registro do que o motor fez com cada mensagem e contadores. Escolha de fila ou substituição no painel de exibição (`?concurrency=replace`).
+- Testes de navegador de `destroy()` (ouvintes, laço de render, áudio, memória de GPU, contextos WebGL, 20 ciclos de criar e destruir) e do painel de integração.
+
+### Alterado
+
+- **Rolagens seguidas não se interrompem mais por padrão:** a nova espera a vez, e o resultado anterior fica à vista por 1,5 s. Para o comportamento anterior, `concurrency: 'replace'`.
+- `cancel()` sem `rollId` cancela só a rolagem em andamento; com `rollId`, cancela também uma rolagem da fila. `clear()` esvazia a fila.
+- `durationMs` inclui a espera na fila.
+- `metadata.visibility` continua sem efeito no motor, agora por decisão: a aplicação e o servidor decidem quem recebe cada rolagem.
+
+### Corrigido
+
+- `destroy()` não liberava o contexto WebGL. Depois de cerca de 16 motores criados e destruídos, o navegador passava a descartar contextos antigos com aviso. Agora o descarte chama `forceContextLoss()`.
+- As declarações de tipos publicadas importavam tipos do three e do Rapier: um projeto TypeScript estrito sem `@types/three` não compilava contra o pacote.
+
+### Limitações conhecidas
+
+- Espectadores veem o mesmo resultado, não a mesma trajetória.
+- O motor não aplica permissões nem esconde rolagens privadas.
+- `maxAgeMs` depende de o relógio local estar alinhado ao do servidor.
+
 ## [0.7.0] — 2026-11-24
 
 Etapa 7 — Efeitos visuais.

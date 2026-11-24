@@ -13,12 +13,14 @@ import {
   type EngineSimulator,
   type RollHandle,
 } from '../../src/integration/engine';
+import { parseRollOptions } from '../../src/integration/options';
 import { createPhysicsSimulator, type SimulationResult } from '../../src/physics/simulator';
 
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 class FakeRenderer implements EngineRenderer {
   readonly area = { width: 26, depth: 15 };
   readonly quality = 'high';
+  readonly presentation = 'overlay';
   readonly dice = new Map<string, { position: Vec3; rotation: Quat }>();
   loop: (() => void) | undefined;
   disposed = false;
@@ -72,6 +74,8 @@ describe('DiceEngine', () => {
       rng: createSeededRandomSource(seed),
       registry: new DieRegistry([D6]),
       now: () => time,
+      // Estes testes cobrem a substituição; a fila tem testes próprios.
+      rolls: parseRollOptions({ concurrency: 'replace' }),
     });
     const events: { name: DiceEventName; payload: unknown }[] = [];
     const names: DiceEventName[] = [

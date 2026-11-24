@@ -34,19 +34,13 @@ import { DEFAULT_FONT_FAMILY, DEFAULT_FONT_WOFF2_BASE64 } from './default-font-d
 import { buildDieMeshData, type AtlasLayout } from './die-mesh-data';
 import { invertMask, paintAtlas } from './label-atlas';
 import { generatePatternPixels, hexToRgb } from './patterns';
+import type { Presentation, QualitySetting, RenderQuality } from './types';
 
-/**
- * Objeto que outro módulo coloca na cena (os efeitos). Reexportado para o
- * `integration`, que não importa o three diretamente.
- */
-export type SceneObject = Object3D;
+export type { Presentation, QualitySetting, RenderQuality, SceneObject } from './types';
 
 /** Nível de qualidade efetivo do render. */
-export type RenderQuality = 'low' | 'medium' | 'high';
 /** Qualidade pedida: um nível fixo ou `auto`. */
-export type QualitySetting = RenderQuality | 'auto';
 /** `overlay`: canvas transparente sobre a aplicação. `tray`: bandeja visível. */
-export type Presentation = 'overlay' | 'tray';
 
 export interface DiceRendererOptions {
   /** Tamanho aproximado da aresta de um dado na tela, em pixels CSS. */
@@ -167,6 +161,7 @@ function isSoftwareRenderer(renderer: WebGLRenderer): boolean {
 export class DiceRenderer {
   /** Qualidade efetiva, depois de resolver `auto`. */
   readonly quality: RenderQuality;
+  readonly presentation: Presentation;
   private readonly container: HTMLElement;
   private readonly options: DiceRendererOptions;
   private readonly profile: QualityProfile;
@@ -194,6 +189,7 @@ export class DiceRenderer {
   constructor(container: HTMLElement, options: DiceRendererOptions) {
     this.container = container;
     this.options = options;
+    this.presentation = options.presentation;
 
     this.canvas = document.createElement('canvas');
     Object.assign(this.canvas.style, {
@@ -375,11 +371,11 @@ export class DiceRenderer {
    * Coloca na cena um objeto de outro módulo (o grupo dos efeitos). O dono
    * continua responsável por liberar seus recursos.
    */
-  addObject(object: SceneObject): void {
+  addObject(object: Object3D): void {
     this.scene.add(object);
   }
 
-  removeObject(object: SceneObject): void {
+  removeObject(object: Object3D): void {
     this.scene.remove(object);
   }
 
@@ -425,6 +421,10 @@ export class DiceRenderer {
     this.environment.dispose();
     this.light.shadow.map?.dispose();
     this.renderer.dispose();
+    // Sem isto o contexto WebGL só é liberado quando o coletor de lixo passa. O
+    // navegador mantém poucos vivos (16 no Chromium) e, passando disso, derruba
+    // o mais antigo, que pode ser o de outro motor ou da aplicação.
+    this.renderer.forceContextLoss();
     this.canvas.remove();
   }
 

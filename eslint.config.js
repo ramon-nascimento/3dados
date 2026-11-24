@@ -11,6 +11,8 @@ export default tseslint.config(
       'coverage/**',
       'test-results/**',
       'playwright-report/**',
+      // Projetos externos: validados por `npm run test:consumer`, com o pacote instalado.
+      'examples/**',
     ],
   },
   js.configs.recommended,

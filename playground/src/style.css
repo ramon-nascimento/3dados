@@ -376,3 +376,26 @@ label.inline {
   align-items: center;
   gap: 6px;
 }
+
+.remote-log {
+  margin: 0;
+  padding: 0 0 0 1.4em;
+  max-height: 14em;
+  overflow-y: auto;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.remote-log li[data-status='applied'] {
+  color: var(--ok, inherit);
+}
+
+.remote-log li[data-status='rejected'] {
+  color: var(--bad, inherit);
+}
+
+.remote-log li[data-status='duplicate'],
+.remote-log li[data-status='stale'],
+.remote-log li[data-status='cancelled'] {
+  opacity: 0.75;
+}

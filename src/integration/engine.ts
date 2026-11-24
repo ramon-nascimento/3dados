@@ -56,25 +56,26 @@ import {
   browserEffectsEnvironment,
   parseEffectsOptions,
   planEffectTriggers,
-  type DiceEffectsControls,
-  type EffectsEnvironment,
   type EffectsHost,
-  type EffectsOptions,
   type PlannedEffect,
 } from '../effects';
+// Tipos das assinaturas públicas vêm de arquivos sem three nem Rapier: assim
+// os `.d.ts` publicados não exigem `@types/three` nem os tipos do Rapier.
+import type { DiceEffectsControls, EffectsEnvironment, EffectsOptions } from '../effects/types';
 import type { PhysicsConfig } from '../physics/config';
+import { createPhysicsSimulator } from '../physics/simulator';
+import type { SimulationRequest, SimulationResult } from '../physics/types';
+import { DiceRenderer } from '../renderer/dice-renderer';
+import type { Presentation, QualitySetting, RenderQuality, SceneObject } from '../renderer/types';
 import {
-  createPhysicsSimulator,
-  type SimulationRequest,
-  type SimulationResult,
-} from '../physics/simulator';
-import {
-  DiceRenderer,
-  type Presentation,
-  type QualitySetting,
-  type RenderQuality,
-  type SceneObject,
-} from '../renderer/dice-renderer';
+  parseRollOptions,
+  type ParsedRollOptions,
+  type RemoteOptions,
+  type RollConcurrency,
+  type RollQueueOptions,
+} from './options';
+import { RemoteChannel, type DiceRemoteControls } from './remote';
+import type { EngineState, EngineStats, PendingRoll } from './state';
 
 export interface DiceEngineOptions {
   /** Tamanho aproximado de um dado na tela, em pixels CSS. Padrão: 72. */
@@ -101,6 +102,15 @@ export interface DiceEngineOptions {
    * sistema pede menos movimento).
    */
   effects?: EffectsOptions;
+  /**
+   * Rolagem que chega com outra em andamento. `queue` (padrão): espera a vez.
+   * `replace`: cancela a anterior.
+   */
+  concurrency?: RollConcurrency;
+  /** Tamanho da fila e tempo mínimo dos dados na mesa. Ver `RollQueueOptions`. */
+  queue?: RollQueueOptions;
+  /** Mensagens de um servidor externo (`engine.remote`). */
+  remote?: RemoteOptions;
 }
 
 /** Controle de uma rolagem em andamento. */
@@ -117,6 +127,7 @@ export interface EngineRenderer {
   readonly area: { width: number; depth: number };
   /** Qualidade efetiva do render. */
   readonly quality: RenderQuality;
+  readonly presentation: Presentation;
   /** Carrega o que as aparências precisam (fontes) antes de os dados aparecerem. */
   prepare(appearances: readonly ResolvedAppearance[]): Promise<void>;
   addDie(dieId: DieId, definition: DieDefinition, appearance: ResolvedAppearance): void;
@@ -198,8 +209,12 @@ export interface EngineDependencies {
   effects?: EffectsOptions;
   /** Preferência de movimento do sistema. Ausente: nenhuma. */
   effectsEnvironment?: EffectsEnvironment;
-  /** Temporizador para remover efeitos parados. Padrão: `setTimeout`. */
+  /** Temporizador para remover efeitos parados e para a fila. Padrão: `setTimeout`. */
   setTimer?: SetTimer;
+  /** Fila e mensagens remotas, já validadas. Padrão: `parseRollOptions({})`. */
+  rolls?: ParsedRollOptions;
+  /** Relógio de parede, em ms desde a época, para `remote.maxAgeMs`. Padrão: `Date.now`. */
+  clock?: () => number;
 }
 
 interface Playback {
@@ -220,6 +235,8 @@ interface ActiveRoll {
   requestedAt: number;
   resolve: (outcome: RollOutcome) => void;
   finished: boolean;
+  /** `queued` até sair da fila; `simulating` até o primeiro quadro. */
+  phase: 'queued' | 'simulating' | 'animating';
   playback?: Playback;
 }
 
@@ -269,6 +286,27 @@ export class DiceEngine {
   /** Raio de cada tipo de dado, para dimensionar os efeitos. */
   private readonly radii = new Map<string, number>();
   private active: ActiveRoll | undefined;
+  /** Rolagens esperando a vez (`concurrency: 'queue'`), na ordem de chegada. */
+  private readonly queue: ActiveRoll[] = [];
+  private readonly rollOptions: ParsedRollOptions;
+  /** Antes deste instante, a próxima da fila espera: os dados concluídos ficam à vista. */
+  private holdUntil = -Infinity;
+  /** Cancela o temporizador que tira a próxima rolagem da fila. */
+  private cancelHold: (() => void) | undefined;
+  /** Rolagem cujos dados estão na mesa. */
+  private tableRollId: RollId | undefined;
+  private readonly remoteChannel: RemoteChannel;
+  private readonly counters = {
+    requested: 0,
+    completed: 0,
+    cancelled: 0,
+    failed: 0,
+    recovered: 0,
+    queuePeak: 0,
+    lastSimulation: null as { attempts: number; cpuTimeMs: number } | null,
+    totalAttempts: 0,
+    totalCpuTimeMs: 0,
+  };
   /** O laço de render está ligado (rolagem animando ou efeito em movimento). */
   private looping = false;
   /** Cancela a remoção agendada do próximo efeito parado. */
@@ -279,6 +317,23 @@ export class DiceEngine {
   constructor(deps: EngineDependencies) {
     this.deps = deps;
     this.setTimer = deps.setTimer ?? defaultSetTimer;
+    this.rollOptions = deps.rolls ?? parseRollOptions({});
+    const clock = deps.clock ?? (() => Date.now());
+    this.remoteChannel = new RemoteChannel(
+      {
+        submit: (request) => this.submit(request),
+        cancelRemote: (rollId) => this.cancelById(rollId, 'remote'),
+        clearRemote: () => {
+          this.clear();
+        },
+        clock,
+        destroyedError: () =>
+          this.destroyed
+            ? new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.')
+            : undefined,
+      },
+      this.rollOptions.maxAgeMs,
+    );
     this.audioPlayer =
       deps.audio ??
       new DiceAudio({ enabled: false }, browserAudioEnvironment(), { surface: 'wood' });
@@ -298,6 +353,7 @@ export class DiceEngine {
     const theme = options.theme === undefined ? undefined : parseTheme(options.theme);
     const audioOptions = parseAudioOptions(options.audio);
     const effectsOptions = parseEffectsOptions(options.effects);
+    const rollOptions = parseRollOptions(options);
     const presentation = options.presentation ?? 'overlay';
     const renderer = new DiceRenderer(container, {
       diceSizePx: options.diceSizePx ?? 72,
@@ -320,6 +376,7 @@ export class DiceEngine {
         }),
         effects: effectsOptions,
         effectsEnvironment: browserEffectsEnvironment(),
+        rolls: rollOptions,
       });
       if (theme) {
         engine.registerTheme(theme);
@@ -334,76 +391,104 @@ export class DiceEngine {
   }
 
   /**
-   * Inicia uma rolagem. Uma rolagem em andamento é cancelada (`superseded`) e
-   * os dados que estavam na mesa são removidos.
+   * Pede uma rolagem. Com `concurrency: 'queue'` (padrão), ela espera a vez se
+   * houver outra na mesa ou na fila; com `replace`, a anterior é cancelada
+   * (`superseded`). Os valores são decididos aqui, mesmo que a rolagem espere.
+   * Nunca lança: um pedido inválido resolve com `failed`.
    */
   roll(request: RollRequest): RollHandle {
-    const raw = request as { id?: unknown; metadata?: unknown } | null | undefined;
-    const rollId =
-      typeof raw?.id === 'string' && raw.id.length > 0 ? raw.id : generateRollId(this.deps.rng);
-    const rawMetadata =
-      typeof raw?.metadata === 'object' && raw.metadata !== null
-        ? (raw.metadata as RollMetadata)
-        : undefined;
-
-    if (this.destroyed) {
-      return this.rejected(
-        rollId,
-        new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.'),
-        rawMetadata,
-      );
-    }
-
-    let plan: RollPlan;
-    try {
-      plan = planRoll({ ...request, id: rollId }, this.deps.registry, this.deps.rng);
-    } catch (error) {
-      // Pedido inválido não interfere na rolagem em andamento.
-      return this.rejected(rollId, toDiceError(error), rawMetadata);
-    }
-
-    if (this.active) this.finishCancelled(this.active, 'superseded');
-    this.removeTableDice();
-    this.audioPlayer.stopAll();
-    // Rolar costuma ser um clique: aproveita o gesto para liberar o áudio.
-    this.audioPlayer.unlockIfGesture();
-
-    let resolve!: (outcome: RollOutcome) => void;
-    const result = new Promise<RollOutcome>((r) => {
-      resolve = r;
-    });
-    const active: ActiveRoll = { plan, requestedAt: this.deps.now(), resolve, finished: false };
-    this.active = active;
-    void this.run(active);
-
-    return {
-      id: rollId,
-      result,
-      cancel: () => {
-        this.finishCancelled(active, 'caller');
-      },
-    };
+    return this.submit(request).handle;
   }
 
   /**
-   * Cancela a rolagem em andamento. Com `rollId`, só cancela se for essa.
-   * Devolve `true` se algo foi cancelado.
+   * Cancela uma rolagem. Sem `rollId`, a que está sendo simulada ou animada;
+   * com `rollId`, essa, esteja na mesa ou na fila. Devolve `true` se algo foi
+   * cancelado.
    */
   cancel(rollId?: RollId): boolean {
-    const active = this.active;
-    if (!active || (rollId !== undefined && active.plan.rollId !== rollId)) return false;
-    this.finishCancelled(active, 'caller');
+    if (rollId !== undefined) return this.cancelById(rollId, 'caller');
+    if (!this.active) return false;
+    this.finishCancelled(this.active, 'caller');
     return true;
   }
 
-  /** Cancela a rolagem em andamento e remove todos os dados da mesa. */
+  /** Cancela a rolagem em andamento e as da fila e remove todos os dados da mesa. */
   clear(): void {
     if (this.destroyed) return;
+    this.cancelQueue('cleared');
     if (this.active) this.finishCancelled(this.active, 'cleared');
     this.removeTableDice();
     this.audioPlayer.stopAll();
     this.effectsLayer.stopAll();
+    this.holdUntil = -Infinity;
+    this.cancelHold?.();
+    this.cancelHold = undefined;
     this.deps.renderer.render();
+  }
+
+  /**
+   * Mensagens de um servidor externo: pedidos, cancelamentos e limpezas, com
+   * tratamento de repetidas, fora de ordem e cancelamentos antecipados.
+   */
+  get remote(): DiceRemoteControls {
+    return this.remoteChannel;
+  }
+
+  /** Retrato do motor neste instante. Ver `EngineState`. */
+  getState(): EngineState {
+    const pending = (entry: ActiveRoll): PendingRoll => ({
+      rollId: entry.plan.rollId,
+      phase: entry.phase,
+      ...metadataOf(entry.plan.metadata),
+    });
+    const audio = this.audioPlayer;
+    return {
+      status: this.destroyed
+        ? 'destroyed'
+        : this.active || this.queue.length > 0
+          ? 'rolling'
+          : 'idle',
+      activeRoll: this.active ? pending(this.active) : null,
+      queue: this.queue.map(pending),
+      tableRollId: this.tableDice.size > 0 ? (this.tableRollId ?? null) : null,
+      diceOnTable: this.tableDice.size,
+      concurrency: this.rollOptions.concurrency,
+      presentation: this.deps.renderer.presentation,
+      quality: this.deps.renderer.quality,
+      defaultTheme: this.defaultThemeId,
+      themes: [...this.themes.keys()],
+      dieTypes: this.deps.registry.types(),
+      audio: {
+        enabled: audio.enabled,
+        state: audio.state,
+        volume: audio.volume,
+        surface: audio.surface,
+      },
+      effects: { level: this.effectsLayer.level, levelSetting: this.effectsLayer.levelSetting },
+    };
+  }
+
+  /** Contadores medidos desde a criação. Ver `EngineStats`. */
+  getStats(): EngineStats {
+    const c = this.counters;
+    return {
+      rolls: {
+        requested: c.requested,
+        completed: c.completed,
+        cancelled: c.cancelled,
+        failed: c.failed,
+        recovered: c.recovered,
+        queuePeak: c.queuePeak,
+      },
+      simulation: {
+        last: c.lastSimulation ? { ...c.lastSimulation } : null,
+        totalAttempts: c.totalAttempts,
+        totalCpuTimeMs: c.totalCpuTimeMs,
+      },
+      remote: this.remoteChannel.getStats(),
+      audio: this.audioPlayer.getStats(),
+      effects: this.effectsLayer.getStats(),
+    };
   }
 
   /**
@@ -505,9 +590,13 @@ export class DiceEngine {
   /** Cancela o que estiver em andamento e libera todos os recursos. */
   destroy(): void {
     if (this.destroyed) return;
+    this.cancelQueue('destroyed');
     if (this.active) this.finishCancelled(this.active, 'destroyed');
     this.removeTableDice();
     this.destroyed = true;
+    this.cancelHold?.();
+    this.cancelHold = undefined;
+    this.remoteChannel.reset();
     this.cancelExpiry?.();
     this.cancelExpiry = undefined;
     this.looping = false;
@@ -517,14 +606,130 @@ export class DiceEngine {
     this.emitter.clear();
   }
 
+  /**
+   * Valida o pedido, decide os valores e inicia ou enfileira a rolagem.
+   * `error` vem preenchido quando o pedido foi recusado (para `remote`).
+   */
+  private submit(request: RollRequest): { handle: RollHandle; error?: DiceError } {
+    this.counters.requested++;
+    const raw = request as { id?: unknown; metadata?: unknown } | null | undefined;
+    const rollId =
+      typeof raw?.id === 'string' && raw.id.length > 0 ? raw.id : generateRollId(this.deps.rng);
+    const rawMetadata =
+      typeof raw?.metadata === 'object' && raw.metadata !== null
+        ? (raw.metadata as RollMetadata)
+        : undefined;
+
+    if (this.destroyed) {
+      return this.rejected(
+        rollId,
+        new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.'),
+        rawMetadata,
+      );
+    }
+
+    let plan: RollPlan;
+    try {
+      plan = planRoll({ ...request, id: rollId }, this.deps.registry, this.deps.rng);
+    } catch (error) {
+      // Pedido inválido não interfere na rolagem em andamento nem na fila.
+      return this.rejected(rollId, toDiceError(error), rawMetadata);
+    }
+
+    // Rolar costuma ser um clique: aproveita o gesto para liberar o áudio.
+    this.audioPlayer.unlockIfGesture();
+
+    let resolve!: (outcome: RollOutcome) => void;
+    const result = new Promise<RollOutcome>((r) => {
+      resolve = r;
+    });
+    const entry: ActiveRoll = {
+      plan,
+      requestedAt: this.deps.now(),
+      resolve,
+      finished: false,
+      phase: 'queued',
+    };
+
+    if (this.rollOptions.concurrency === 'replace') {
+      if (this.active) this.finishCancelled(this.active, 'superseded');
+      this.start(entry);
+    } else {
+      this.queue.push(entry);
+      this.counters.queuePeak = Math.max(this.counters.queuePeak, this.queue.length);
+      // Fila cheia: a mais antiga que ainda espera dá lugar à nova.
+      while (this.queue.length > this.rollOptions.maxPending) {
+        this.finishCancelled(this.queue[0]!, 'superseded');
+      }
+      this.pump();
+    }
+
+    return {
+      handle: {
+        id: rollId,
+        result,
+        cancel: () => {
+          this.finishCancelled(entry, 'caller');
+        },
+      },
+    };
+  }
+
   private rejected(
     rollId: RollId,
     error: DiceError,
     metadata: RollMetadata | undefined,
-  ): RollHandle {
+  ): { handle: RollHandle; error: DiceError } {
+    this.counters.failed++;
     const outcome = { status: 'failed', rollId, error, ...metadataOf(metadata) } as const;
     this.emitter.emit('rollFailed', outcome);
-    return { id: rollId, result: Promise.resolve(outcome), cancel: () => undefined };
+    return {
+      handle: { id: rollId, result: Promise.resolve(outcome), cancel: () => undefined },
+      error,
+    };
+  }
+
+  /** Cancela a rolagem `rollId`, na mesa ou na fila. */
+  private cancelById(rollId: RollId, reason: RollCancelReason): boolean {
+    const entry =
+      this.active?.plan.rollId === rollId
+        ? this.active
+        : this.queue.find((queued) => queued.plan.rollId === rollId);
+    if (!entry) return false;
+    this.finishCancelled(entry, reason);
+    return true;
+  }
+
+  private cancelQueue(reason: RollCancelReason): void {
+    while (this.queue.length > 0) this.finishCancelled(this.queue[0]!, reason);
+  }
+
+  /**
+   * Tira da fila a próxima rolagem, se a mesa estiver livre e os dados da
+   * anterior já tiverem ficado à vista o tempo mínimo.
+   */
+  private pump(): void {
+    if (this.destroyed || this.active || this.queue.length === 0) return;
+    const wait = this.holdUntil - this.deps.now();
+    if (wait > 0) {
+      this.cancelHold ??= this.setTimer(() => {
+        this.cancelHold = undefined;
+        this.pump();
+      }, wait);
+      return;
+    }
+    this.cancelHold?.();
+    this.cancelHold = undefined;
+    this.start(this.queue.shift()!);
+  }
+
+  /** Limpa a mesa e começa a simular `entry`. */
+  private start(entry: ActiveRoll): void {
+    this.removeTableDice();
+    this.audioPlayer.stopAll();
+    entry.phase = 'simulating';
+    this.active = entry;
+    void this.run(entry);
   }
 
   private async run(active: ActiveRoll): Promise<void> {
@@ -555,6 +760,12 @@ export class DiceEngine {
         renderer.prepare(appearances),
       ]);
       if (active.finished) return;
+      this.counters.lastSimulation = {
+        attempts: simulation.attempts,
+        cpuTimeMs: simulation.cpuTimeMs,
+      };
+      this.counters.totalAttempts += simulation.attempts;
+      this.counters.totalCpuTimeMs += simulation.cpuTimeMs;
 
       const offsets = this.reorient(plan, simulation);
       const { recording } = simulation;
@@ -563,6 +774,7 @@ export class DiceEngine {
         for (const index of result.parts) resultIds[index] = result.dieId;
       }
 
+      this.tableRollId = plan.rollId;
       plan.dice.forEach((die, i) => {
         renderer.addDie(die.dieId, die.definition, appearances[i]!);
         this.tableDice.set(die.dieId, {
@@ -588,6 +800,7 @@ export class DiceEngine {
         settled: plan.dice.map(() => false),
         effects: this.planEffects(plan, themes),
       };
+      active.phase = 'animating';
       this.emitter.emit('rollStarted', {
         rollId: plan.rollId,
         dice: plan.results.flatMap(({ parts, role }) =>
@@ -766,30 +979,48 @@ export class DiceEngine {
       durationMs: this.deps.now() - active.requestedAt,
       ...metadataOf(plan.metadata),
     } as const;
+    this.counters.completed++;
+    if (dice.some((die) => die.recovered)) this.counters.recovered++;
+    // A próxima da fila espera os dados desta ficarem à vista o tempo mínimo.
+    this.holdUntil = this.deps.now() + this.rollOptions.holdMs;
     this.emitter.emit('rollCompleted', outcome);
     active.resolve(outcome);
+    this.pump();
     this.syncLoop();
   }
 
   private finishCancelled(active: ActiveRoll, reason: RollCancelReason): void {
     if (active.finished) return;
-    this.settle(active);
-    this.audioPlayer.stopAll();
-    this.removeTableDice();
-    this.deps.renderer.render();
+    this.counters.cancelled++;
     const outcome = {
       status: 'cancelled',
       rollId: active.plan.rollId,
       reason,
       ...metadataOf(active.plan.metadata),
     } as const;
+    if (active.phase === 'queued') {
+      // Ainda na fila: nada na mesa, nada tocando.
+      active.finished = true;
+      this.queue.splice(this.queue.indexOf(active), 1);
+      this.emitter.emit('rollCancelled', outcome);
+      active.resolve(outcome);
+      return;
+    }
+    this.settle(active);
+    this.audioPlayer.stopAll();
+    this.removeTableDice();
+    this.deps.renderer.render();
+    this.holdUntil = -Infinity;
     this.emitter.emit('rollCancelled', outcome);
     active.resolve(outcome);
+    this.pump();
     this.syncLoop();
   }
 
   private finishFailed(active: ActiveRoll, error: DiceError): void {
     if (active.finished) return;
+    this.counters.failed++;
+    this.holdUntil = -Infinity;
     this.settle(active);
     this.audioPlayer.stopAll();
     // Nunca deixa na tela um dado cujo valor não pôde ser garantido.
@@ -803,6 +1034,7 @@ export class DiceEngine {
     } as const;
     this.emitter.emit('rollFailed', outcome);
     active.resolve(outcome);
+    this.pump();
     this.syncLoop();
   }
 

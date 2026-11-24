@@ -20,5 +20,5 @@ Usar `@dimforge/rapier3d-deterministic-compat` como dependência de runtime.
 ## Consequências
 
 - Na mesma máquina, a mesma `seed` reproduz a mesma animação (coberto por teste).
-- Trajetórias iguais **entre máquinas** ainda não são garantidas nem prometidas. As condições iniciais do lançamento usam `Math.sin` e `Math.cos`, cujo último bit pode variar entre motores de JavaScript. Quando trajetórias compartilhadas virarem funcionalidade (decisão da Etapa 8), as condições iniciais precisarão ser calculadas de forma independente de plataforma.
+- Trajetórias iguais **entre máquinas** ainda não são garantidas nem prometidas. As condições iniciais do lançamento usam `Math.sin` e `Math.cos`, cujo último bit pode variar entre motores de JavaScript. Se trajetórias compartilhadas virarem funcionalidade, as condições iniciais precisarão ser calculadas de forma independente de plataforma. Na Etapa 8 ficou decidido não fazê-lo por ora ([ADR 0012](0012-mensagens-remotas-e-fila.md)).
 - A comparação de custo precisa ser refeita ao atualizar o Rapier.

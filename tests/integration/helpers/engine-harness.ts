@@ -14,11 +14,18 @@ import {
   type EngineSimulator,
   type RollHandle,
 } from '../../../src/integration/engine';
+import {
+  parseRollOptions,
+  type RemoteOptions,
+  type RollConcurrency,
+  type RollQueueOptions,
+} from '../../../src/integration/options';
 
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 export class FakeRenderer implements EngineRenderer {
   area = { width: 26, depth: 15 };
   readonly quality = 'high';
+  readonly presentation = 'overlay';
   readonly dice = new Map<
     string,
     { definition: DieDefinition; appearance: ResolvedAppearance; position: Vec3; rotation: Quat }
@@ -97,6 +104,9 @@ export class FakeRenderer implements EngineRenderer {
   }
 }
 
+/** Época do relógio de parede do harness: `clock()` = época + tempo do teste. */
+export const WALL_CLOCK_EPOCH = 1_800_000_000_000;
+
 export function createHarness(
   simulator: EngineSimulator,
   options: {
@@ -106,6 +116,10 @@ export function createHarness(
     audio?: DiceAudio;
     effects?: EffectsOptions;
     effectsEnvironment?: EffectsEnvironment;
+    /** Padrão: fila sem tempo mínimo na mesa (rolagens seguidas começam logo). */
+    concurrency?: RollConcurrency;
+    queue?: RollQueueOptions;
+    remote?: RemoteOptions;
   } = {},
 ) {
   const renderer = new FakeRenderer();
@@ -122,6 +136,13 @@ export function createHarness(
     ...(options.audio ? { audio: options.audio } : {}),
     ...(options.effects ? { effects: options.effects } : {}),
     ...(options.effectsEnvironment ? { effectsEnvironment: options.effectsEnvironment } : {}),
+    rolls: parseRollOptions({
+      concurrency: options.concurrency ?? 'queue',
+      queue: { holdMs: 0, ...options.queue },
+      remote: options.remote ?? {},
+    }),
+    // Relógio de parede alinhado ao relógio do teste, a partir de uma época fixa.
+    clock: () => WALL_CLOCK_EPOCH + time,
     setTimer: (callback, ms) => {
       const timer = { at: time + ms, callback };
       timers.push(timer);

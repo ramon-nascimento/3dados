@@ -11,14 +11,14 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | 5     | Materiais e temas      | ✅ Concluída         |
 | 6     | Sonorização            | ✅ Concluída         |
 | 7     | Efeitos visuais        | ✅ Concluída         |
-| 8     | API e integração       | Aguardando aprovação |
-| 9     | Otimização e validação | —                    |
+| 8     | API e integração       | ✅ Concluída         |
+| 9     | Otimização e validação | Aguardando aprovação |
 
 ## Como retomar o trabalho
 
 Este documento basta para continuar o projeto em uma sessão nova, sem depender de conversas anteriores.
 
-**Onde estamos.** Etapas 1 a 7 concluídas (versão 0.7.0). A próxima é a **Etapa 8 — API e integração**, que ainda não foi iniciada e depende de aprovação.
+**Onde estamos.** Etapas 1 a 8 concluídas (versão 0.8.0). A próxima é a **Etapa 9 — Otimização e validação**, que ainda não foi iniciada e depende de aprovação.
 
 **O que ler, nesta ordem:**
 
@@ -33,7 +33,7 @@ Este documento basta para continuar o projeto em uma sessão nova, sem depender 
 
 1. Apresente um plano curto da etapa (o que será construído, como se liga ao que existe e quais decisões cabem ao responsável pelo projeto) e **aguarde a aprovação**.
 2. Implemente só essa etapa. Não adiante funcionalidades de etapas futuras.
-3. Valide: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`. Meça com `npm run bench` quando a etapa afetar desempenho ou convergência.
+3. Valide: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` e, quando a etapa mexer na API pública ou no empacotamento, `npm run test:consumer`. Meça com `npm run bench` quando a etapa afetar desempenho ou convergência.
 4. Atualize a documentação: este plano (critérios com evidência, desvios e descobertas), `API.md`, `ARCHITECTURE.md`, `INTEGRATION_GUIDE.md`, `CHANGELOG.md`, um ADR novo para cada decisão relevante, e a versão em `package.json` e `src/version.ts`.
 5. Pare e relate: critérios de aceite com evidência, desvios do plano com o motivo, e ressalvas. Aguarde a aprovação antes da etapa seguinte.
 
@@ -255,37 +255,46 @@ Descobertas desta etapa:
 - **Efeitos parados não podem manter o laço de render ligado:** um halo de 2,5 s no `reduced` desenharia 150 quadros iguais. Daí o temporizador.
 - **O comentário de `ThemeConfig.soundProfile`** ainda dizia "sem efeito", desde a Etapa 6; corrigido junto com o de `effects`.
 
-## Etapa 8 — API e integração (próxima)
+## Etapa 8 — API e integração ✅
 
-Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 11 (API pública), 12 (multiplayer) e 13 (painel de integração).
+Protocolo de mensagens de um servidor externo (`engine.remote`), fila de rolagens, `getState()` e `getStats()`, painel de integração com servidor simulado, projetos de exemplo em JavaScript e TypeScript, teste de consumo do pacote empacotado e verificação de `destroy()` no navegador. Decisões em [ADR 0012](adr/0012-mensagens-remotas-e-fila.md).
 
-**O que construir:**
+Decisões do responsável pelo projeto, ao aprovar a etapa: fila por padrão (com `replace` como opção) e resultado à vista por um tempo mínimo; `visibility` só repassada; trajetórias iguais entre clientes ficam para depois.
 
-- Consolidação da fachada: revisar nomes e contratos, `engine.getState()` e `engine.getStats()`.
-- Contratos para receber eventos de um servidor externo (`engine.remote.receive`). A proposta de `RollEnvelope` está em [API.md](API.md): identificadores de rolagem, jogador e sala, sequência, versão de protocolo e visibilidade.
-- Tratamento de mensagens duplicadas, fora de ordem e de cancelamentos obsoletos.
-- Simulador de eventos externos no playground (painel de integração). **Não** construir um backend.
-- Os gatilhos de efeito (`RollRequest.effects`) viajam no pedido; presets registrados (`engine.effects.register`) não, e um cliente sem o preset só avisa ([ADR 0011](adr/0011-efeitos-visuais.md)).
-- Exemplos mínimos de integração em JavaScript e em TypeScript, validados por teste.
+| Critério de aceite                                                  | Evidência                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Testes de mensagem duplicada, fora de ordem e cancelamento obsoleto | `tests/unit/remote.test.ts` (38 testes): validação do envelope campo a campo e regras do sequenciador (mesma sequência, mesmo `rollId`, fora de ordem, antes da limpeza, limpeza atrasada, `maxAgeMs`, cancelamento antes do pedido, buracos, salas independentes, histórico limitado, `reset`). `tests/integration/remote.test.ts` (19 testes, Rapier real): mensagem repetida gera uma rolagem só; pedido atrasado nunca aparece; **dois clientes recebendo as mesmas mensagens em ordens diferentes terminam com a mesma rolagem na mesa**; cancelamento antes do pedido, durante a animação, na fila e depois do fim (`already-finished`, os dados ficam); `table.cleared`; recusas sem lançar. No navegador, `tests/e2e/integration.spec.ts` (4 testes) exercita o painel: rajada em ordem inversa, repetição, cancelamento antes do pedido e mensagem sem valores. |
+| Exemplos mínimos em JavaScript e TypeScript funcionando             | `examples/javascript` e `examples/typescript`. `npm run test:consumer` instala o pacote empacotado em cópias fora do repositório, compila (TypeScript com `tsc` estrito e `skipLibCheck: false` antes do Vite) e abre cada um no navegador: rolagem autônoma e mensagem do servidor exibindo `servidor-1: 17 (total 17)`, sons servidos com status 200, sem erros nem avisos no console.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `destroy()` libera todos os recursos                                | `tests/e2e/destroy.spec.ts`: um motor com áudio, efeitos e bandeja, destruído no meio de uma animação com rolagem na fila. Depois do `destroy`: `info.memory` do three com 0 geometrias e 0 texturas; recursos dos efeitos criados = liberados; canvas removido; ouvintes em `window`, `document` e `MediaQueryList`, `requestAnimationFrame` e `ResizeObserver` iguais aos de antes da criação; `AudioContext` fechado; contextos WebGL perdidos; `roll` resolve com `ENGINE_DESTROYED` e as pendentes com `destroyed`. Segundo teste: 20 ciclos de criar, rolar e destruir, com os 20 contextos perdidos e nenhum aviso "Too many active WebGL contexts".                                                                                                                                                                                                              |
+| Teste de consumo em um projeto mínimo externo                       | `scripts/test-consumer.js` (`npm run test:consumer`): `npm pack` (0.8.0: 100 arquivos, 1.102.214 bytes), instalação com o bundler do consumidor, Rapier num pedaço separado do de entrada, sons copiados para `dist/sounds/` e `tests/consumer/example.spec.ts` nos dois exemplos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `API.md` e `INTEGRATION_GUIDE.md` completos                         | Nada mais está marcado como proposto em `API.md`: protocolo, recibos e motivos, fila, estado, estatísticas, motivos de cancelamento e tipos públicos. O guia ganhou as seções Multiplayer, Rolagens simultâneas e Projetos de exemplo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-**Critérios de aceite:**
+Além dos critérios:
 
-- Testes de mensagem duplicada, fora de ordem e cancelamento obsoleto.
-- Exemplos mínimos em JavaScript e TypeScript funcionando.
-- `destroy()` libera todos os recursos.
-- Teste de consumo da biblioteca em um projeto mínimo externo.
-- `API.md` e `INTEGRATION_GUIDE.md` completos.
+- **Fila:** `tests/integration/queue.test.ts` (21 testes) cobre a espera com `holdMs` medido a partir do `rollCompleted`, a ordem dos eventos, valores autônomos decididos no pedido, cancelamento na fila e na mesa, `maxPending`, `clear`, `destroy`, pedido inválido fora da fila, modo `replace` e validação das opções.
+- **Estado e estatísticas:** `getState()` é uma cópia serializável (`JSON.parse(JSON.stringify())` igual ao original e alterá-la não muda o motor); `getStats().simulation` soma as medições de cada rolagem.
+- **Validação completa** em 2026-11-24: `typecheck`, `lint`, `npm test` (30 arquivos, 858 testes), `build`, `npm run test:e2e` (53 testes, inclusive as 13 capturas de referência) e `npm run test:consumer`.
+- **Playground conferido no navegador:** o registro mostrou rolagem aplicada, pedido obsoleto fora de ordem, cancelamento antes do pedido, repetida e mensagem recusada com `INVALID_MESSAGE`, com a fila funcionando.
 
-**Decisões que cabem ao responsável pelo projeto, ainda em aberto:**
+Mudanças em relação ao plano:
 
-- Rolagens simultâneas: fila ou sobreposição. Hoje uma rolagem nova cancela a anterior.
-- Significado final de `visibility` (`public`, `private`, `blind`). Hoje o campo é aceito e não tem efeito.
-- Trajetórias iguais entre clientes por semente compartilhada. Exige calcular as condições iniciais de forma independente de plataforma ([ADR 0006](adr/0006-rapier-deterministico.md)).
+- **Envelope como união discriminada**, não um formato único: `table.cleared` não tem `rollId`, `visibility` só existe no pedido e é opcional (padrão `public`), e `payload` tem forma definida.
+- **`values` obrigatórios** em rolagens remotas: o servidor é a autoridade.
+- **Código de erro novo**, `INVALID_MESSAGE`, separado de `INVALID_REQUEST`: o primeiro é do envelope, o segundo da rolagem.
+- **Motivo de cancelamento novo**, `remote`. `metadata` ganhou `sequence` e `sentAt`.
+- **`cancel()` sem `rollId` cancela só a rolagem em andamento**, não a fila. `durationMs` inclui a espera na fila.
+- **Tipos públicos separados do three e do Rapier**, em `renderer/types.ts`, `physics/types.ts` e `effects/types.ts` (ver descobertas).
+- **`destroy()` chama `forceContextLoss()`** (ver descobertas).
+- **Escolha de fila ou substituição no playground** (`?concurrency=replace`), para o teste de navegador do modo `replace`.
+- **Os exemplos usam Vite**, a mesma ferramenta do projeto, sem dependência nova na raiz. O teste de consumo baixa three, Rapier, Vite e TypeScript do registro do npm quando não estão no cache local.
 
-**O que já existe e condiciona a etapa:**
+Descobertas desta etapa:
 
-- O motor não é a autoridade dos resultados: recebe os valores e garante que a animação os exiba. A sincronização obrigatória é de resultados e estados, não de trajetórias.
-- O Rapier é carregado por `import()` dinâmico e pesa alguns MB: o teste de consumo externo precisa conferir que o bundler do consumidor lida com isso.
+- **`destroy()` não liberava o contexto WebGL.** `WebGLRenderer.dispose()` não perde o contexto, e o Chromium mantém cerca de 16 vivos. No teste de 20 ciclos, só 4 contextos foram perdidos, todos por descarte forçado do navegador. Corrigido com `forceContextLoss()` no descarte do renderer.
+- **As declarações publicadas arrastavam os tipos do three e do Rapier.** O exemplo em TypeScript não compilava: TS7016 (sem `@types/three`) e TS2550 (`Symbol.dispose` nas declarações do Rapier). Nenhum teste anterior compilava um consumidor fora do repositório.
+- **O teste de efeitos "disparo por chamada pelos botões do painel" falhou uma vez** numa execução completa sob carga (esperava 3 efeitos ativos, havia 1: a explosão expirou antes da leitura). Passa isolado e não envolve a fila.
+- **A string `rawworld_new` some no bundle minificado**, então o teste de consumo reconhece o pedaço do Rapier pelo tamanho (WASM embutido, mais de 2 MB).
+- **O WebGL por software do teste avisa "GPU stall due to ReadPixels"** no console; o teste de consumo ignora só essas mensagens do driver.
 
 ## Etapa 9 — Otimização e validação
 
@@ -314,22 +323,21 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e esta
 
 ## Painéis do playground
 
-| Painel         | Etapa | Situação                                                                                                  |
-| -------------- | ----- | --------------------------------------------------------------------------------------------------------- |
-| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.                                              |
-| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.                                         |
-| Áudio          | 6     | Pronto: liga e desliga, volume, superfície, impactos de teste por perfil, sons especiais e vozes medidas. |
-| Efeitos        | 7     | Pronto: nível, intensidade, cor, duração, disparo por efeito, regras de exemplo e estatísticas medidas.   |
-| Integração     | 8     | —                                                                                                         |
-| Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados.                                      |
-| Física         | 9     | —                                                                                                         |
+| Painel         | Etapa | Situação                                                                                                                             |
+| -------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.                                                                         |
+| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.                                                                    |
+| Áudio          | 6     | Pronto: liga e desliga, volume, superfície, impactos de teste por perfil, sons especiais e vozes medidas.                            |
+| Efeitos        | 7     | Pronto: nível, intensidade, cor, duração, disparo por efeito, regras de exemplo e estatísticas medidas.                              |
+| Integração     | 8     | Pronto: servidor simulado com latência, repetição, ordem inversa, cancelamentos, limpeza e mensagem inválida; registro e contadores. |
+| Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados.                                                                 |
+| Física         | 9     | —                                                                                                                                    |
 
 ## Pendências conhecidas
 
 Itens observados no caminho que não pertencem a uma etapa específica ou que precisam ser lembrados:
 
 - **Sem integração contínua.** Os testes rodam só localmente. Um workflow no GitHub que rode tipos, lint e testes a cada push não está no plano e depende de decisão.
-- **Campo aceito e ainda sem efeito:** `visibility` em `metadata` (Etapa 8).
 - **Capturas visuais por sistema operacional.** Só há referências para Windows, geradas com WebGL por software. Em outro sistema, a primeira execução de `tests/visual` precisa de `--update-snapshots` e de conferência das imagens.
 - **Vidro e cristal na bandeja** ficam escuros sobre o feltro escuro: a transmissão mostra o que está atrás ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - **Capacidade.** Em densidades extremas, abaixo de cerca de 3 unidades² por dado, ainda há falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md)).
@@ -343,18 +351,20 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 - **Custo de GPU dos efeitos não medido.** O custo de CPU é pequeno ([BENCHMARKS.md](BENCHMARKS.md#efeitos-etapa-7)); o de desenho depende da área coberta pelos halos e partículas aditivos e da placa. Fica para a Etapa 9.
 - **Aparência dos efeitos** verificada só em capturas com WebGL por software; falta olhar em um navegador com GPU. Não há teste automático para "parece bom".
 - **Medições em uma única máquina.** Todos os números de `BENCHMARKS.md` vêm do mesmo computador.
+- **Teste de efeitos instável sob carga:** "disparo por chamada pelos botões do painel" (`tests/e2e/effects.spec.ts`) depende de a explosão ainda estar ativa quando o contador é lido. Falhou uma vez numa execução completa da Etapa 8.
+- **O teste de consumo precisa de rede** na primeira execução (ou com o cache do npm vazio): ele instala as dependências dos exemplos do registro.
+- **A fila atrasa rolagens locais seguidas.** Com o padrão, a segunda rolagem começa pelo menos 1,5 s depois de a primeira concluir. É o comportamento decidido; uma aplicação que prefira o antigo usa `concurrency: 'replace'`.
+- **Trajetórias iguais entre clientes** não existem: exigiriam a mesma área, o mesmo tema ou material, o mesmo `diceSizePx` e condições iniciais independentes de plataforma ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).
 
 ## Decisões pendentes
 
 | Decisão                                            | Etapa |
 | -------------------------------------------------- | ----- |
-| Rolagens simultâneas: fila ou sobreposição         | 8     |
-| Semântica final de `visibility` (`blind` e afins)  | 8     |
-| Trajetórias iguais entre clientes por semente      | 8     |
 | Pré-simulação na thread principal ou em Web Worker | 9     |
 
 Decididas:
 
+- Multiplayer: fila por padrão com resultado à vista um tempo mínimo (`replace` como opção), `visibility` só repassada e trajetórias iguais entre clientes adiadas ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).
 - Efeitos: gatilhos no pedido com condição por dados, `ThemeConfig.effects` com efeito, nível padrão `auto` (segue `prefers-reduced-motion`) e presets em JSON sobre os efeitos internos ([ADR 0011](adr/0011-efeitos-visuais.md)).
 - Áudio: amostras CC0 da Kenney em arquivos separados com síntese de reserva, ligado por padrão (volume 0,8), desbloqueio automático no primeiro gesto, madeira no overlay e feltro na bandeja ([ADR 0010](adr/0010-audio.md)).
 - Temas e materiais: aparência padrão marfim, fonte OFL incluída, texturas procedurais, efeito físico moderado e tema desconhecido com o padrão ([ADR 0009](adr/0009-temas-e-materiais.md)).

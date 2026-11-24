@@ -31,8 +31,32 @@ export type { Quat, Vec3 } from './core/math';
 
 export { DiceEngine } from './integration/engine';
 export type { DiceEngineOptions, RollHandle, TableDie } from './integration/engine';
+export { ROLL_CONCURRENCY, ROLL_QUEUE_LIMITS } from './integration/options';
+export type { RemoteOptions, RollConcurrency, RollQueueOptions } from './integration/options';
+export type { DiceRemoteControls, RemoteReceipt } from './integration/remote';
+export type { EngineState, EngineStats, PendingRoll, RollPhase } from './integration/state';
 
-export type { Presentation, QualitySetting, RenderQuality } from './renderer/dice-renderer';
+export {
+  PROTOCOL_VERSION,
+  REMOTE_LIMITS,
+  REMOTE_MESSAGE_TYPES,
+  ROLL_VISIBILITIES,
+  parseEnvelope,
+} from './core/remote';
+export type {
+  RemoteEnvelopeBase,
+  RemoteMessageType,
+  RemoteReason,
+  RemoteReceiptStatus,
+  RemoteRollPayload,
+  RemoteStats,
+  RollCancelledEnvelope,
+  RollEnvelope,
+  RollRequestedEnvelope,
+  TableClearedEnvelope,
+} from './core/remote';
+
+export type { Presentation, QualitySetting, RenderQuality } from './renderer/types';
 
 export {
   DEFAULT_THEME,
@@ -71,7 +95,8 @@ export type {
   Surface,
 } from './audio';
 
-export { EFFECTS } from './effects';
+// Direto de `effects/types`: o barril `effects` leva ao three nos `.d.ts`.
+export { EFFECTS } from './effects/types';
 export type {
   BuiltinEffect,
   DiceEffectsControls,
@@ -82,7 +107,7 @@ export type {
   EffectStats,
   EffectTriggerOptions,
   EffectsOptions,
-} from './effects';
+} from './effects/types';
 
 export { createCryptoRandomSource, createSeededRandomSource } from './core/random';
 export type { RandomSource } from './core/random';

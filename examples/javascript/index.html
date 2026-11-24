@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>3dados — exemplo em JavaScript</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #1d2b22;
+        color: #eee;
+      }
+      #mapa {
+        position: relative;
+        height: 70vh;
+      }
+      #dice {
+        position: absolute;
+        inset: 0;
+      }
+      .barra {
+        display: flex;
+        gap: 8px;
+        padding: 12px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="mapa">
+      <!-- conteúdo do VTT -->
+      <div id="dice"></div>
+    </div>
+    <div class="barra">
+      <button id="rolar" disabled>Rolar 2d6</button>
+      <button id="servidor" disabled>Mensagem do servidor (d20 = 17)</button>
+      <output id="resultado">iniciando…</output>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
