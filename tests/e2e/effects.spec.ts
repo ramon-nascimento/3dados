@@ -79,11 +79,24 @@ test.describe('efeitos no navegador', () => {
   test('disparo por chamada pelos botões do painel', async ({ page }) => {
     await open(page, '?effects=full&audio=off');
     await roll(page, { dice: [{ type: 'd8', count: 2 }] });
-    for (const name of ['highlight', 'burst', 'fire']) {
-      await page.locator(`[data-testid="effects-button"][data-effect="${name}"]`).click();
-    }
+    // Os três cliques e a leitura na mesma tarefa da página: a explosão dura 1,2 s,
+    // e com a máquina ocupada ela terminava antes de o teste ler o contador.
+    const now = await page.evaluate(
+      (names) => {
+        for (const name of names) {
+          document
+            .querySelector<HTMLButtonElement>(
+              `[data-testid="effects-button"][data-effect="${name}"]`,
+            )!
+            .click();
+        }
+        return (
+          window as unknown as { __3dados: { engine: { effects: { getStats(): EffectStats } } } }
+        ).__3dados.engine.effects.getStats();
+      },
+      ['highlight', 'burst', 'fire'],
+    );
     await expect(page.getByTestId('effects-status')).toHaveText(/disparado/);
-    const now = await stats(page);
     expect(now.active).toBe(3);
     expect(now.objects).toBeGreaterThan(1);
     await page.getByTestId('effects-stop').click();

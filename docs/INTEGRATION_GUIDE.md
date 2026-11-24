@@ -161,7 +161,7 @@ const engine = await DiceEngine.create(elemento, {
 - `completed`: os valores em `dice` são os exibidos.
 - `cancelled`: `reason` diz por quê (`caller`, `superseded`, `cleared`, `remote`, `destroyed`).
 - `failed`: `error.code` diz o que houve. Os dois casos que merecem tratamento próprio:
-  - `SIMULATION_FAILED`: dados demais para a área disponível, ou vários dados sem simetria precisando de faces raras ao mesmo tempo. Reduza a quantidade, aumente o elemento ou diminua `diceSizePx`.
+  - `SIMULATION_FAILED`: dados demais para a área disponível, ou vários dados sem simetria precisando de faces raras ao mesmo tempo. Reduza a quantidade, aumente o elemento ou diminua `diceSizePx`. Os limites medidos estão em [BENCHMARKS.md](BENCHMARKS.md#limites).
   - `RESULT_MISMATCH`: o motor não conseguiu garantir o valor na tela e removeu os dados. Mostre o resultado oficial por outro meio.
 
 ## Recuperação
@@ -203,7 +203,7 @@ localStorage.setItem('tema', serializeTheme(engine.getTheme('tema-da-ana')!));
 - Registrar de novo um `id` existente redesenha os dados que estão na mesa, sem movê-los.
 - O tema nunca muda o valor. O material muda a física, e portanto a trajetória: em multiplayer, jogadores com temas diferentes veem caminhos diferentes e o mesmo resultado.
 - Fontes de tema (`font`) precisam estar carregadas na página pela aplicação. Sem isso, o motor usa a fonte incluída.
-- Em máquinas sem GPU (WebGL por software), `quality: 'auto'` reduz o custo do render; `engine.quality` informa o nível escolhido.
+- Em máquinas sem GPU (WebGL por software), `quality: 'auto'` começa no nível mais barato; nas demais, desce de nível se os quadros medidos ficarem lentos. `engine.quality` informa o nível em vigor. Ver [Desempenho e estabilidade](#desempenho-e-estabilidade).
 
 ## Elementos junto aos dados
 
@@ -364,6 +364,51 @@ Um nome que o cliente não conhece (por exemplo, um preset que outro jogador reg
 const engine = await DiceEngine.create(elemento, { effects: { level: prefs.efeitos ?? 'auto' } });
 engine.effects.setLevel('off'); // nenhum objeto de efeito é criado
 ```
+
+## Desempenho e estabilidade
+
+O motor foi medido em hardware identificado, e os limites de uso saem dessas medições: ver [BENCHMARKS.md](BENCHMARKS.md#limites). O que a aplicação precisa saber:
+
+**Quantidade de dados e área.** Uma rolagem aceita até 30 dados físicos (um d100 conta dois). O que decide se ela cabe é a área por dado, em unidades² (uma unidade é a aresta de um d6, `diceSizePx` pixels na tela):
+
+| Dados                         | Área por dado           | O que acontece abaixo disso                                                               |
+| ----------------------------- | ----------------------- | ----------------------------------------------------------------------------------------- |
+| Pequenos (d4, d6, d8)         | pelo menos 4 unidades²  | Esperas de centenas de milissegundos e falhas ocasionais.                                 |
+| Grandes (d10, d12, d20, d100) | pelo menos 10 unidades² | Com 6, muitas tentativas e falhas raras; com 4, falha (`SIMULATION_FAILED`) quase sempre. |
+
+Com `diceSizePx` de 72, uma tela Full HD inteira tem 390 unidades²: cabem 30 dados de qualquer tipo. Um painel de 960×672 px tem 124: cabem 30 dados pequenos ou 12 grandes. O motor não recusa de antemão um pedido que não cabe: ele tenta, e a falha só chega depois de esgotadas as tentativas, o que pode passar de um segundo. Limite a quantidade na aplicação, ou diminua `diceSizePx` em elementos pequenos.
+
+**A página não trava durante a pré-simulação.** O cálculo roda em trechos de até 8 ms e devolve o controle ao navegador entre eles. Em mesas cheias ainda há uma espera antes do primeiro quadro, mas a aplicação continua respondendo. `rollStarted` informa o que foi medido:
+
+```ts
+engine.on('rollStarted', ({ simulation }) => {
+  // cpuTimeMs: trabalho total; longestTaskMs: maior trecho sem devolver o controle
+  metricas.registrar(simulation.cpuTimeMs, simulation.longestTaskMs, simulation.attempts);
+});
+```
+
+**Qualidade e taxa de quadros.** Deixe `quality: 'auto'`, a não ser que a aplicação tenha a própria tela de configuração gráfica. O motor mede os quadros e desce de nível sozinho em máquinas lentas; avise o jogador, se quiser, com o evento:
+
+```ts
+engine.on('qualityChanged', ({ to }) => avisar(`Qualidade dos dados reduzida para ${to}.`));
+```
+
+Para poupar bateria em notebooks e celulares, limite os quadros: `DiceEngine.create(elemento, { maxFps: 30 })`. A animação dura o mesmo tempo. Com os dados parados, o motor não desenha nada.
+
+**Perda do contexto gráfico.** O navegador pode tirar o contexto WebGL da página (driver reiniciado, GPU trocada, pouca memória). O motor se recupera sozinho quando o contexto volta, e as rolagens continuam concluindo com os valores oficiais mesmo sem imagem. Como o jogador fica sem ver os dados nesse intervalo, mostre o resultado em texto enquanto durar:
+
+```ts
+engine.on('contextLost', () => painel.mostrarResultadosEmTexto(true));
+engine.on('contextRestored', () => painel.mostrarResultadosEmTexto(false));
+```
+
+O intervalo pode ser de milissegundos ou não acabar (o navegador decide). `engine.getState().context` informa a situação a qualquer momento.
+
+**Física ajustável.** `engine.setPhysics({ gravity: 90 })` muda os parâmetros das rolagens seguintes, por exemplo para uma opção "dados mais lentos" nas preferências do jogador. Valores fora da faixa lançam `INVALID_ARGUMENT`. A física nunca muda o valor.
+
+**Medições na aplicação.** `engine.getStats().render` traz os quadros por segundo e o intervalo entre quadros da última animação, chamadas de desenho, memória de GPU e a situação do contexto. Nenhum valor é estimado.
+
+**Medir em outra máquina.** O playground tem um modo de benchmark: `npm run dev`, abrir `http://localhost:5173/?bench=run` e copiar a tabela que aparece no painel de desempenho. `npm run bench:browser` faz o mesmo pelo Playwright, com opções para simular CPU lenta e escolher o navegador (ver o cabeçalho de `scripts/bench-browser.js`).
 
 ## Empacotamento
 

@@ -17,6 +17,11 @@ export interface RollStartedEvent {
     attempts: number;
     /** Tempo de CPU gasto antes do primeiro quadro, em milissegundos. */
     cpuTimeMs: number;
+    /**
+     * Maior trecho em que a pré-simulação segurou a thread sem devolver o
+     * controle ao navegador, em milissegundos.
+     */
+    longestTaskMs: number;
   };
   metadata?: RollMetadata;
 }
@@ -39,6 +44,28 @@ export interface DiceSettledEvent {
   faceId: string;
 }
 
+/** O navegador tirou o contexto gráfico: nada é desenhado até ele voltar. */
+export interface ContextLostEvent {
+  /** Rolagem que estava sendo simulada ou animada, ou `null`. Ela segue até o fim. */
+  activeRollId: RollId | null;
+}
+
+/** O contexto gráfico voltou e a mesa foi redesenhada. */
+export interface ContextRestoredEvent {
+  /** Quanto tempo o motor ficou sem contexto, em milissegundos. */
+  lostForMs: number;
+}
+
+/** A qualidade automática desceu um nível porque as animações medidas ficaram lentas. */
+export interface QualityChangedEvent {
+  from: 'low' | 'medium' | 'high';
+  to: 'low' | 'medium' | 'high';
+  /** Quadros por segundo da animação que motivou a mudança. */
+  fps: number;
+  /** Intervalo entre quadros, em ms, dessa animação. */
+  frameMs: { p50: number; p95: number; max: number };
+}
+
 /** Eventos de ciclo de vida emitidos pelo motor. */
 export interface DiceEventMap {
   rollStarted: RollStartedEvent;
@@ -47,6 +74,9 @@ export interface DiceEventMap {
   rollCompleted: RollCompleted;
   rollCancelled: RollCancelled;
   rollFailed: RollFailed;
+  contextLost: ContextLostEvent;
+  contextRestored: ContextRestoredEvent;
+  qualityChanged: QualityChangedEvent;
 }
 
 export type DiceEventName = keyof DiceEventMap;

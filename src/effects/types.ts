@@ -70,6 +70,8 @@ export interface EffectStats {
   active: number;
   /** Partículas vivas. */
   particles: number;
+  /** Teto de partículas em vigor: `maxParticles` reduzido pela qualidade do render. */
+  particleLimit: number;
   /** Objetos de efeito na cena (inclui o grupo raiz). */
   objects: number;
   /** Geometrias, materiais e texturas criados desde a criação do motor. */
@@ -84,7 +86,10 @@ export interface EffectStats {
 export interface EffectsOptions {
   /** Padrão: `auto`. */
   level?: EffectLevelSetting;
-  /** Teto de partículas vivas somando todos os efeitos. Padrão: 2.000; de 0 a 20.000. */
+  /**
+   * Teto de partículas vivas somando todos os efeitos. Padrão: 2.000; de 0 a
+   * 20.000. A qualidade do render o reduz: 60% em `medium` e 30% em `low`.
+   */
   maxParticles?: number;
 }
 

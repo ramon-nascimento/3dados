@@ -453,7 +453,7 @@ A prioridade é construir uma fundação técnica sólida para um sistema de rol
 
 ## O que mudou ou foi decidido depois
 
-A seção 19 já foi cumprida: o plano foi apresentado e aprovado, e as Etapas 1 a 8 estão concluídas.
+A seção 19 já foi cumprida: o plano foi apresentado e aprovado, e as Etapas 1 a 9 estão concluídas.
 
 Decisões tomadas pelo responsável pelo projeto, que complementam a especificação:
 
@@ -465,6 +465,7 @@ Decisões tomadas pelo responsável pelo projeto, que complementam a especifica�
 - Sons: amostras CC0 da Kenney, em arquivos separados do JavaScript. Áudio ligado por padrão (volume 0,8), liberado sozinho no primeiro clique ou tecla. Superfície de madeira no overlay e de feltro na bandeja.
 - Efeitos: gatilhos declarados no pedido com condição por dados (tipo, `role`, valores, ids); `ThemeConfig.effects` acompanha os dados do tema; nível padrão `auto`, que segue `prefers-reduced-motion`; efeitos da aplicação como presets em JSON sobre os efeitos internos.
 - Multiplayer: rolagens simultâneas em fila por padrão (o resultado fica à vista um tempo mínimo antes da próxima), com opção de substituição; `visibility` só repassada à aplicação; trajetórias iguais entre clientes ficam para depois.
+- Desempenho: pré-simulação na thread principal, fatiada, sem Web Worker; uma rolagem em andamento conclui mesmo se o navegador tirar o contexto gráfico; física ajustável com o motor em uso (`setPhysics`); limites medidos em um computador e marcados como provisórios até medir em outro.
 
 Onde a implementação detalhou ou se afastou do texto acima:
 
@@ -487,4 +488,10 @@ Onde a implementação detalhou ou se afastou do texto acima:
 | 12    | Eventos com versão; duplicadas, fora de ordem e cancelamentos obsoletos | Envelope em união discriminada (`roll.requested`, `roll.cancelled`, `table.cleared`); a mesa segue a ordem do servidor por sala; pedidos atrasados são descartados; cancelamento vale em qualquer ordem. | [ADR 0012](adr/0012-mensagens-remotas-e-fila.md)                                             |
 | 12    | Visibilidade da rolagem                                                 | Só repassada em `metadata`: esconder no cliente não protege valores que já chegaram; o servidor filtra quem recebe.                                                                                      | [ADR 0012](adr/0012-mensagens-remotas-e-fila.md)                                             |
 | 12    | Configuração visual na mensagem                                         | Viajam os ids de tema por dado, a semente e os gatilhos de efeito; os temas e presets são registrados em cada cliente.                                                                                   | [ADR 0012](adr/0012-mensagens-remotas-e-fila.md)                                             |
+| 14    | Controle de taxa de quadros quando necessário                           | `maxFps` opcional (padrão: a taxa do monitor); o laço de render só roda com rolagem animando ou efeito em movimento.                                                                                     | [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md)                                        |
+| 14    | Limitação de uso de GPU; redução de efeitos conforme a qualidade        | Com `quality: 'auto'`, o nível desce quando duas animações seguidas ficam abaixo de 25 quadros por segundo; o teto de partículas acompanha o nível.                                                      | [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md)                                        |
+| 14    | Tratamento de perda de contexto gráfico, quando possível                | Os recursos de GPU são refeitos quando o contexto volta; a rolagem em andamento conclui sem ele, e a aplicação é avisada por evento.                                                                     | [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md)                                        |
+| 14    | Pausa de simulações desnecessárias                                      | A pré-simulação roda em trechos de até 8 ms, sem travar a página, e é interrompida se a rolagem for cancelada.                                                                                           | [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md)                                        |
+| 14    | Definir benchmarks e limites aceitáveis após testes reais               | Limites de uso e limites aceitáveis definidos a partir de medições em um computador (duas GPUs, WebGL por software e CPU desacelerada), marcados como provisórios.                                       | [BENCHMARKS.md](BENCHMARKS.md#limites)                                                       |
+| 13    | Painel de física: ajustar parâmetros e observar seus efeitos            | `engine.setPhysics`, com faixas validadas, valendo a partir da rolagem seguinte; nunca muda o valor.                                                                                                     | [API.md](API.md#física)                                                                      |
 | 4     | Componentes independentes                                               | Um pacote único com módulos internos e fronteiras impostas por lint.                                                                                                                                     | [ADR 0001](adr/0001-pacote-unico-com-fronteiras.md)                                          |

@@ -1,28 +1,28 @@
 # Plano de desenvolvimento
 
-O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parada para aprovação**: nenhuma etapa começa automaticamente. Uma funcionalidade só é considerada concluída depois de validada pelos critérios de aceite.
+O desenvolvimento foi dividido em nove etapas, todas concluídas. **Cada etapa terminou com uma parada para aprovação**: nenhuma etapa começa automaticamente, e isso vale para qualquer trabalho novo. Uma funcionalidade só é considerada concluída depois de validada pelos critérios de aceite.
 
-| Etapa | Tema                   | Estado               |
-| ----- | ---------------------- | -------------------- |
-| 1     | Fundação               | ✅ Concluída         |
-| 2     | Primeiro d6 funcional  | ✅ Concluída         |
-| 3     | Dados poliédricos      | ✅ Concluída         |
-| 4     | Resultados controlados | ✅ Concluída         |
-| 5     | Materiais e temas      | ✅ Concluída         |
-| 6     | Sonorização            | ✅ Concluída         |
-| 7     | Efeitos visuais        | ✅ Concluída         |
-| 8     | API e integração       | ✅ Concluída         |
-| 9     | Otimização e validação | Aguardando aprovação |
+| Etapa | Tema                   | Estado       |
+| ----- | ---------------------- | ------------ |
+| 1     | Fundação               | ✅ Concluída |
+| 2     | Primeiro d6 funcional  | ✅ Concluída |
+| 3     | Dados poliédricos      | ✅ Concluída |
+| 4     | Resultados controlados | ✅ Concluída |
+| 5     | Materiais e temas      | ✅ Concluída |
+| 6     | Sonorização            | ✅ Concluída |
+| 7     | Efeitos visuais        | ✅ Concluída |
+| 8     | API e integração       | ✅ Concluída |
+| 9     | Otimização e validação | ✅ Concluída |
 
 ## Como retomar o trabalho
 
 Este documento basta para continuar o projeto em uma sessão nova, sem depender de conversas anteriores.
 
-**Onde estamos.** Etapas 1 a 8 concluídas (versão 0.8.0). A próxima é a **Etapa 9 — Otimização e validação**, que ainda não foi iniciada e depende de aprovação.
+**Onde estamos.** As nove etapas estão concluídas (versão 0.9.0). Não há etapa seguinte planejada: o que vem depois depende de decisão do responsável pelo projeto. Os candidatos estão em "Decisões pendentes" e em "Pendências conhecidas"; o mais direto é rodar o benchmark em um segundo computador, para tirar o "provisório" dos limites.
 
 **O que ler, nesta ordem:**
 
-1. Este documento: a seção da etapa atual e as "Pendências conhecidas".
+1. Este documento: a seção da última etapa e as "Pendências conhecidas".
 2. [PROJECT_BRIEF.md](PROJECT_BRIEF.md): a especificação original. Cada etapa abaixo aponta as seções relevantes.
 3. [ARCHITECTURE.md](ARCHITECTURE.md): módulos, ciclo de vida de uma rolagem e limitações.
 4. [API.md](API.md): o que existe hoje e o que está apenas proposto.
@@ -33,7 +33,7 @@ Este documento basta para continuar o projeto em uma sessão nova, sem depender 
 
 1. Apresente um plano curto da etapa (o que será construído, como se liga ao que existe e quais decisões cabem ao responsável pelo projeto) e **aguarde a aprovação**.
 2. Implemente só essa etapa. Não adiante funcionalidades de etapas futuras.
-3. Valide: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` e, quando a etapa mexer na API pública ou no empacotamento, `npm run test:consumer`. Meça com `npm run bench` quando a etapa afetar desempenho ou convergência.
+3. Valide: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e` e, quando a etapa mexer na API pública ou no empacotamento, `npm run test:consumer`. Meça com `npm run bench` (física, em Node) e `npm run bench:browser` (motor completo, no navegador) quando a etapa afetar desempenho ou convergência.
 4. Atualize a documentação: este plano (critérios com evidência, desvios e descobertas), `API.md`, `ARCHITECTURE.md`, `INTEGRATION_GUIDE.md`, `CHANGELOG.md`, um ADR novo para cada decisão relevante, e a versão em `package.json` e `src/version.ts`.
 5. Pare e relate: critérios de aceite com evidência, desvios do plano com o motivo, e ressalvas. Aguarde a aprovação antes da etapa seguinte.
 
@@ -48,7 +48,7 @@ Este documento basta para continuar o projeto em uma sessão nova, sem depender 
 - Uma funcionalidade só está concluída depois de validada.
 - Regras centrais do motor: o valor é decidido antes da animação; a aparência nunca participa do cálculo do resultado; uma rolagem só conclui depois de conferir o que está na tela; regras de RPG não entram no motor.
 
-**Ambiente:** Node ≥ 22.12 e npm. O playground roda com `npm run dev` em `http://localhost:5173`. Os testes de navegador usam o headless shell do Playwright com WebGL por software; ver as observações da Etapa 1.
+**Ambiente:** Node ≥ 22.12 e npm. O playground roda com `npm run dev` em `http://localhost:5173`. Os testes de navegador usam o headless shell do Playwright com WebGL por software; ver as observações da Etapa 1. Não edite `src/`, `playground/` nem `package.json` enquanto um teste de navegador roda: o servidor de desenvolvimento recarrega a página e o teste cai.
 
 ## Etapa 1 — Fundação ✅
 
@@ -296,42 +296,65 @@ Descobertas desta etapa:
 - **A string `rawworld_new` some no bundle minificado**, então o teste de consumo reconhece o pedaço do Rapier pelo tamanho (WASM embutido, mais de 2 MB).
 - **O WebGL por software do teste avisa "GPU stall due to ReadPixels"** no console; o teste de consumo ignora só essas mensagens do driver.
 
-## Etapa 9 — Otimização e validação
+## Etapa 9 — Otimização e validação ✅
 
-Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e estabilidade), 15 (qualidade e testes) e 13 (painéis de física e de desempenho).
+Pré-simulação fatiada, medição dos quadros, qualidade automática, teto de quadros, perda e restauração do contexto gráfico, física ajustável em uso, painéis de física e de desempenho, modo de benchmark e limites definidos por medição. Decisões em [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md); números em [BENCHMARKS.md](BENCHMARKS.md).
 
-**O que construir:**
+Decisões do responsável pelo projeto, ao aprovar a etapa: pré-simulação na thread principal, cedendo o controle ao navegador (sem Web Worker); a rolagem conclui mesmo sem contexto gráfico; `engine.setPhysics()` como API nova; medir nesta máquina e deixar o benchmark pronto para outra, com os limites provisórios até lá.
 
-- Benchmarks reais em mais de uma máquina e definição dos limites aceitáveis a partir deles.
-- Qualidade adaptativa: redução de efeitos e de custo de GPU conforme a configuração; controle de taxa de quadros quando necessário.
-- Tratamento de perda e restauração do contexto gráfico.
-- Verificação de memória e de descarte de recursos em uso prolongado.
-- Painel de desempenho no playground (FPS, tempo de simulação, quantidade de dados), só com valores medidos.
-- Painel de física no playground, para ajustar parâmetros e observar o efeito. A alocação deste painel nesta etapa é uma proposta; ele pode ser antecipado.
+| Critério de aceite                                                              | Evidência                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/BENCHMARKS.md` com o hardware identificado; limites a partir das medições | [BENCHMARKS.md](BENCHMARKS.md#limites): limites de uso (30 dados por rolagem, área mínima por dado pequeno e grande, quantidade sem espera perceptível) e limites aceitáveis (maior trecho da pré-simulação, quadros por segundo, falhas, memória), cada um com a medição que o sustenta. Ambientes medidos, identificados pelo próprio benchmark: GPU dedicada (RTX 5060), GPU integrada (Intel UHD), WebGL por software, e os três com a CPU desacelerada em 4× e 6×. **Ressalva:** é um computador só; os limites estão marcados como provisórios.                                                                                                                                                                                         |
+| Teste de perda e restauração de contexto                                        | `tests/e2e/context-loss.spec.ts` (3 testes), com `WEBGL_lose_context`: perda no meio da animação com efeito na tela (a rolagem conclui com os valores oficiais, os efeitos saem com os recursos liberados, nada é pintado; na volta os dados reaparecem e uma rolagem nova funciona); perda com a mesa parada, duas vezes, na bandeja em qualidade alta com vidro, cristal e metal (a imagem volta igual, com menos de 0,5% de pixels diferentes, e as contagens de geometrias e texturas na GPU são as mesmas; `destroy()` depois disso zera tudo); rolagem pedida sem contexto. `tests/integration/performance.test.ts` cobre o motor com um renderer falso. Conferido também à mão no navegador com GPU real.                              |
+| Sem crescimento de memória em 200 rolagens seguidas                             | `tests/e2e/memory.spec.ts`: 21 rolagens de aquecimento e mais 200, com som, efeitos e bandeja, medindo depois de coletas de lixo forçadas. Em quatro execuções: memória fora do heap de −1 a 0 KB; geometrias (22), texturas (35), ouvintes (101), recursos de efeitos e vozes idênticos; heap de JS 3,3 MB menor em três e 1 MB maior em uma. Um perfil de 821 rolagens mostra o heap plano depois das primeiras centenas (50 KB em 400 rolagens); ver [BENCHMARKS.md](BENCHMARKS.md#memória-em-uso-prolongado-etapa-9). Em Node, 200 rolagens no motor deixam a mesa, os efeitos e os temporizadores vazios, e o simulador libera todo mundo de física que cria, inclusive em falhas e abandonos (`tests/integration/performance.test.ts`). |
 
-**Critérios de aceite:**
+Além dos critérios:
 
-- `docs/BENCHMARKS.md` com o hardware identificado; limites definidos a partir das medições.
-- Teste de perda e restauração de contexto.
-- Sem crescimento de memória em 200 rolagens seguidas.
+- **A pré-simulação não trava a página.** Maior trecho sem devolver o controle: até 9,7 ms na máquina de referência (o trabalho total chega a 385 ms) e até 25 ms com a CPU 6× mais lenta (trabalho de 1,2 s). A mesma semente dá a mesma gravação com ou sem pausas, e uma rolagem cancelada interrompe a simulação (`tests/integration/performance.test.ts`).
+- **Qualidade automática:** a regra tem testes de unidade (`tests/unit/frame-meter.test.ts`); a troca de nível, com a mesa vazia e os recursos refeitos, tem teste de navegador (`tests/e2e/performance.spec.ts`: densidade de pixels, sombras, teto de partículas e evento); e ela agiu sozinha na GPU integrada com carga pesada (17 → 31 quadros por segundo).
+- **Teto de quadros** (`maxFps`): o limitador tem testes de unidade para monitores de 60, 144 e 240 Hz, e o navegador confirma a taxa medida abaixo do teto, com o mesmo resultado.
+- **Física ajustável:** `setPhysics` com faixas validadas (`tests/unit/physics-config.test.ts`), efeito na rolagem seguinte e nunca no valor (integração e navegador).
+- **Painéis de física e de desempenho** testados no navegador; o de desempenho mostra exatamente o que `getStats()` devolve.
+- **Modo de benchmark** (`?bench=run`) e `npm run bench:browser`, com teste de navegador.
+- **Validação completa** em 2026-11-24: `typecheck`, `lint`, `npm test` (33 arquivos, 921 testes), `build`, `npm run test:e2e` (64 testes, inclusive as 13 capturas de referência e o teste de 200 rolagens) e `npm run test:consumer` (pacote 0.9.0: 101 arquivos, 1.122.334 bytes).
 
-**O que já existe e condiciona a etapa:**
+Mudanças em relação ao plano:
 
-- Decisão em aberto: pré-simulação na thread principal ou em Web Worker. A interface de física já é assíncrona para permitir a troca. Em uso normal a pré-simulação leva menos de 10 ms; em casos densos passa de 400 ms, que é o argumento a favor do Worker.
-- O limite de 30 dados por rolagem (`MAX_DICE_PER_ROLL`) é provisório e sai destas medições.
-- O renderer não emite eventos de perda de contexto: é preciso ouvir `webglcontextlost` e `webglcontextrestored` no canvas e reconstruir os recursos de GPU.
+- **A regra da qualidade automática mudou de percentil 95 para a taxa média da animação.** O plano dizia "quando o p95 fica acima do orçamento". A medição com carga pesada mostrou que essa regra, com o mínimo de 30 quadros que ela exigia, nunca reagia a uma animação realmente lenta (poucos quadros). Passou a ser: duas animações seguidas abaixo de 25 quadros por segundo.
+- **O relógio do fatiamento é consultado a cada passo de física**, e não só entre tentativas, como o plano previa. Só entre tentativas, uma única tentativa com a mesa cheia seguraria a thread por dezenas de milissegundos.
+- **Duas GPUs medidas em vez de uma.** O navegador aceita pedir a GPU integrada (`--force_low_power_gpu`): além da dedicada, entrou uma GPU real bem mais fraca. Continua sendo um computador só.
+- **`physics` passou a ser validado na criação do motor.** Antes qualquer valor era aceito. É mudança de comportamento para quem passava valores fora da faixa.
+- **O teto de partículas dos efeitos acompanha a qualidade do render** (60% em `medium`, 30% em `low`), também quando a qualidade é fixa. É a "redução de efeitos conforme a qualidade" da especificação.
+- **API um pouco maior que a prevista:** `getPhysics()`, `longestTaskMs` (em `rollStarted` e nas estatísticas), `particleLimit`, `fps` em `qualityChanged`, e `PHYSICS_LIMITS`, `DEFAULT_PHYSICS_CONFIG` e `MAX_FPS_LIMITS` exportados.
+- **Os testes de integração rodam sem fatiamento** (`tests/integration/setup.ts`). Eles avançam o motor quadro a quadro; com pausas que dependem da velocidade da máquina, um deles falhou em uma de três execuções. O fatiamento tem testes próprios.
+- **O teste de 200 rolagens roda sozinho, depois dos demais** (projeto `prolongado` do Playwright). Junto com os outros, a disputa de CPU fez um teste antigo estourar o tempo.
+- **Três testes de navegador antigos ficaram mais robustos**, sem mudar o que conferem: o de efeitos pelos botões do painel (pendência da Etapa 8, agora resolvida: os cliques e a leitura acontecem na mesma tarefa da página), o do painel de integração (a linha do registro pode já trazer o resultado) e o de quatro rolagens seguidas de 16 dados (limite de tempo maior).
+- **Parâmetros novos no playground:** `?maxFps=`, `?bench=run`, `?benchRolls=`, `?benchCases=` e `?benchNote=`. O painel de desempenho ganhou botões para perder e restaurar o contexto.
+
+Descobertas desta etapa:
+
+- **A área limita antes da quantidade, e depende do tamanho do dado.** Na área de rolagem do playground em uma janela de 1280×720 (13×9 unidades), 30 d6 rolam sempre, e 30 d20 falham em 199 de 200. Os limites passaram a ser por dado pequeno e por dado grande.
+- **Uma rolagem que mal cabe custa caro:** as duas de 30 dados mistos que concluíram em 13×9 levaram 8 tentativas e 1,1 s de pré-simulação; as outras oito falharam depois das 12 tentativas. A aplicação deve limitar a quantidade pela área.
+- **Com GPU, mesmo integrada, a taxa de quadros não é o limite:** acima de 148 quadros por segundo com 30 dados e efeitos em Full HD. O que pesa é a transmissão do vidro na bandeja (64) e resoluções muito altas.
+- **O custo de GPU dos efeitos é pequeno:** cerca de 10% dos quadros na GPU integrada com `critical` em 20 dados.
+- **Sem GPU, a mesa cheia fica no limite:** 25 a 36 quadros por segundo com 20 a 30 dados em Full HD.
+- **A desaceleração de CPU do DevTools pesa mais que o fator anunciado** em simulações longas (5 a 10 vezes a 4×). Serve como ordem de grandeza.
+- **O heap de JS não é plano nas primeiras centenas de rolagens:** sobe cerca de 1 MB, cai 4 MB de uma vez e só então estabiliza. A explicação provável é o V8 (código otimizado acumulado e depois descartado), mas não foi verificada. O teste usa a memória fora do heap como detector preciso e dá folga ao heap.
+- **Forçar a limpeza de memória do V8 pelo DevTools** (`Memory.forciblyPurgeJavaScriptMemory`) trava a página; não serve para estabilizar a medição.
+- **O three recupera quase tudo sozinho na restauração do contexto**, menos o mapa de ambiente, que é desenhado na GPU. Liberar os recursos na perda evita identificadores antigos presos.
+- **O painel de navegador embutido, quando oculto, limita os quadros** (já visto na Etapa 7): nele o painel de desempenho mostra "parado" e nenhuma animação medida. As medições de quadros foram feitas pelo Playwright.
 
 ## Painéis do playground
 
-| Painel         | Etapa | Situação                                                                                                                             |
-| -------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.                                                                         |
-| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.                                                                    |
-| Áudio          | 6     | Pronto: liga e desliga, volume, superfície, impactos de teste por perfil, sons especiais e vozes medidas.                            |
-| Efeitos        | 7     | Pronto: nível, intensidade, cor, duração, disparo por efeito, regras de exemplo e estatísticas medidas.                              |
-| Integração     | 8     | Pronto: servidor simulado com latência, repetição, ordem inversa, cancelamentos, limpeza e mensagem inválida; registro e contadores. |
-| Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados.                                                                 |
-| Física         | 9     | —                                                                                                                                    |
+| Painel         | Etapa | Situação                                                                                                                                                                                               |
+| -------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.                                                                                                                                           |
+| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.                                                                                                                                      |
+| Áudio          | 6     | Pronto: liga e desliga, volume, superfície, impactos de teste por perfil, sons especiais e vozes medidas.                                                                                              |
+| Efeitos        | 7     | Pronto: nível, intensidade, cor, duração, disparo por efeito, regras de exemplo e estatísticas medidas.                                                                                                |
+| Integração     | 8     | Pronto: servidor simulado com latência, repetição, ordem inversa, cancelamentos, limpeza e mensagem inválida; registro e contadores.                                                                   |
+| Desempenho     | 9     | Pronto: última rolagem (pré-simulação, maior trecho, tentativas, colisões, duração, recuperados), quadros (taxa, intervalo e CPU por quadro), cena e memória, qualidade, contexto gráfico e benchmark. |
+| Física         | 9     | Pronto: 12 parâmetros ajustáveis com o motor em uso e restauração dos padrões.                                                                                                                         |
 
 ## Pendências conhecidas
 
@@ -340,7 +363,7 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 - **Sem integração contínua.** Os testes rodam só localmente. Um workflow no GitHub que rode tipos, lint e testes a cada push não está no plano e depende de decisão.
 - **Capturas visuais por sistema operacional.** Só há referências para Windows, geradas com WebGL por software. Em outro sistema, a primeira execução de `tests/visual` precisa de `--update-snapshots` e de conferência das imagens.
 - **Vidro e cristal na bandeja** ficam escuros sobre o feltro escuro: a transmissão mostra o que está atrás ([ADR 0009](adr/0009-temas-e-materiais.md)).
-- **Capacidade.** Em densidades extremas, abaixo de cerca de 3 unidades² por dado, ainda há falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md)).
+- **Capacidade.** Abaixo de 4 unidades² por dado pequeno ou de 10 por dado grande há esperas longas e, perto de 4 por dado grande, falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md#limites)). O motor não recusa o pedido de antemão: tenta, e falha depois de gastar as tentativas.
 - **Lançamento dirigido visível** em dados sem simetria com faces raras ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 - **Custo do aquecimento** da física na criação do motor não foi medido separadamente.
 - **Um corte de dados nas bordas** foi visto uma vez durante o desenvolvimento, enquanto o servidor de desenvolvimento recarregava dependências, e não foi reproduzido. Uma corrida possível (redimensionar o elemento e rolar no mesmo instante) foi fechada; a causa não foi confirmada.
@@ -348,22 +371,31 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 - **Muitos dados, muitos sons descartados.** Com 20 ou mais dados, o limite de 16 vozes deixa de fora a maioria dos impactos fracos ([BENCHMARKS.md](BENCHMARKS.md#áudio-etapa-6)). `maxVoices` vai até 64.
 - **Uma superfície por motor.** O som de todos os dados usa a mesma superfície (`wood` ou `felt`), não o que está sob cada dado.
 - **Falhas intermitentes no `npm run test:e2e`.** Duas execuções completas pararam com páginas em "iniciando…" durante a Etapa 6; as quatro seguintes passaram. A causa não foi identificada.
-- **Custo de GPU dos efeitos não medido.** O custo de CPU é pequeno ([BENCHMARKS.md](BENCHMARKS.md#efeitos-etapa-7)); o de desenho depende da área coberta pelos halos e partículas aditivos e da placa. Fica para a Etapa 9.
 - **Aparência dos efeitos** verificada só em capturas com WebGL por software; falta olhar em um navegador com GPU. Não há teste automático para "parece bom".
-- **Medições em uma única máquina.** Todos os números de `BENCHMARKS.md` vêm do mesmo computador.
-- **Teste de efeitos instável sob carga:** "disparo por chamada pelos botões do painel" (`tests/e2e/effects.spec.ts`) depende de a explosão ainda estar ativa quando o contador é lido. Falhou uma vez numa execução completa da Etapa 8.
+- **Medições em um único computador.** Todos os números de `BENCHMARKS.md` vêm da mesma máquina (duas GPUs, WebGL por software e CPU desacelerada). Os limites são provisórios até a bateria rodar em outro computador: `npm run dev` e abrir `http://localhost:5173/?bench=run`. Faltam também celulares, Firefox e Safari.
 - **O teste de consumo precisa de rede** na primeira execução (ou com o cache do npm vazio): ele instala as dependências dos exemplos do registro.
 - **A fila atrasa rolagens locais seguidas.** Com o padrão, a segunda rolagem começa pelo menos 1,5 s depois de a primeira concluir. É o comportamento decidido; uma aplicação que prefira o antigo usa `concurrency: 'replace'`.
+- **Espera em mesas cheias.** O fatiamento impede que a página trave, mas não reduz o trabalho: 30 dados esperam cerca de 0,1 s na máquina de referência e mais de 1 s com a CPU 6× mais lenta.
+- **A qualidade automática só desce.** Um engasgo longo (duas rolagens seguidas com a máquina ocupada) rebaixa o nível até o motor ser recriado. O antisserrilhado, decidido na criação do contexto, não acompanha o nível.
+- **Sem contexto gráfico, não há imagem.** O motor segue entregando resultados e avisa por evento; se o navegador não devolver o contexto, mostrar os valores de outra forma é da aplicação.
+- **A suíte de navegador sobrecarrega a CPU.** São 8 processos com WebGL por software; sob essa carga, um teste leva de duas a três vezes o tempo que leva sozinho. O teste de 200 rolagens roda em separado por isso, e leva cerca de 4 minutos.
+- **O heap de JS oscila no início de uma sessão longa** (cerca de 1 MB para cima, depois 4 MB para baixo); a causa provável é o V8, e não foi verificada ([BENCHMARKS.md](BENCHMARKS.md#memória-em-uso-prolongado-etapa-9)).
 - **Trajetórias iguais entre clientes** não existem: exigiriam a mesma área, o mesmo tema ou material, o mesmo `diceSizePx` e condições iniciais independentes de plataforma ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).
 
 ## Decisões pendentes
 
-| Decisão                                            | Etapa |
-| -------------------------------------------------- | ----- |
-| Pré-simulação na thread principal ou em Web Worker | 9     |
+Nenhuma decisão bloqueia o que está feito. Ficam para o responsável pelo projeto, sem etapa planejada:
+
+| Decisão                                                                                   |
+| ----------------------------------------------------------------------------------------- |
+| Rodar o benchmark em um segundo computador e confirmar ou ajustar os limites provisórios. |
+| Lançar a 1.0.0 (congela a API pública) ou seguir em `0.x`.                                |
+| Integração contínua no GitHub (tipos, lint e testes a cada push).                         |
+| Recusar de antemão um pedido que não cabe na área, em vez de tentar e falhar.             |
 
 Decididas:
 
+- Desempenho: pré-simulação na thread principal, fatiada, sem Web Worker; a rolagem conclui sem contexto gráfico; física ajustável por `setPhysics`; limites provisórios medidos em um computador ([ADR 0013](adr/0013-desempenho-e-contexto-grafico.md)).
 - Multiplayer: fila por padrão com resultado à vista um tempo mínimo (`replace` como opção), `visibility` só repassada e trajetórias iguais entre clientes adiadas ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).
 - Efeitos: gatilhos no pedido com condição por dados, `ThemeConfig.effects` com efeito, nível padrão `auto` (segue `prefers-reduced-motion`) e presets em JSON sobre os efeitos internos ([ADR 0011](adr/0011-efeitos-visuais.md)).
 - Áudio: amostras CC0 da Kenney em arquivos separados com síntese de reserva, ligado por padrão (volume 0,8), desbloqueio automático no primeiro gesto, madeira no overlay e feltro na bandeja ([ADR 0010](adr/0010-audio.md)).
@@ -372,4 +404,4 @@ Decididas:
 - Build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)).
 - A face `0` do d10 rolado sozinho vale **10** (2026-11-24). A face continua mostrando "0"; o valor registrado é 10.
 
-A pré-simulação segue na thread principal; pelos números da Etapa 2 um Worker não se justifica, e a decisão será revista com medições em hardware mais fraco.
+A pré-simulação segue na thread principal, fatiada. Com a CPU desacelerada 6×, o maior trecho ficou em 25 ms; um Web Worker fica como opção se um computador mais fraco mostrar trechos longos.

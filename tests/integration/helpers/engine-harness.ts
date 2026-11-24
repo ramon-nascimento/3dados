@@ -8,6 +8,7 @@ import { createSeededRandomSource } from '../../../src/core/random';
 import type { RollOutcome } from '../../../src/core/types';
 import type { ResolvedAppearance } from '../../../src/customization';
 import type { EffectsEnvironment, EffectsOptions } from '../../../src/effects';
+import type { RenderQuality, RenderStats, RendererEvent } from '../../../src/renderer/types';
 import {
   DiceEngine,
   type EngineRenderer,
@@ -21,11 +22,35 @@ import {
   type RollQueueOptions,
 } from '../../../src/integration/options';
 
+/** Medições de um renderer que nunca desenhou nada. */
+export function idleRenderStats(): RenderStats {
+  return {
+    active: false,
+    frames: 0,
+    current: null,
+    lastSession: null,
+    drawCalls: 0,
+    triangles: 0,
+    geometries: 0,
+    textures: 0,
+    canvas: { width: 0, height: 0, pixelRatio: 1 },
+    quality: 'high',
+    qualitySetting: 'high',
+    maxFps: null,
+    context: 'active',
+    contextLosses: 0,
+    contextRestores: 0,
+    qualityDrops: 0,
+  };
+}
+
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 export class FakeRenderer implements EngineRenderer {
   area = { width: 26, depth: 15 };
-  readonly quality = 'high';
+  quality: RenderQuality = 'high';
   readonly presentation = 'overlay';
+  context: 'active' | 'lost' = 'active';
+  private listener: ((event: RendererEvent) => void) | undefined;
   readonly dice = new Map<
     string,
     { definition: DieDefinition; appearance: ResolvedAppearance; position: Vec3; rotation: Quat }
@@ -40,6 +65,24 @@ export class FakeRenderer implements EngineRenderer {
   objectsAdded = 0;
   renders = 0;
 
+  setListener(listener: (event: RendererEvent) => void): void {
+    this.listener = listener;
+  }
+  /** Simula um aviso do renderer (contexto perdido ou restaurado, qualidade). */
+  emit(event: RendererEvent): void {
+    if (event.type === 'contextLost') this.context = 'lost';
+    if (event.type === 'contextRestored') this.context = 'active';
+    if (event.type === 'qualityChanged') this.quality = event.to;
+    this.listener?.(event);
+  }
+  getStats(): RenderStats {
+    return {
+      ...idleRenderStats(),
+      active: this.loop !== undefined,
+      quality: this.quality,
+      context: this.context,
+    };
+  }
   prepare(appearances: readonly ResolvedAppearance[]): Promise<void> {
     this.prepared.push([...appearances]);
     return Promise.resolve();

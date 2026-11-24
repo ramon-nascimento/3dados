@@ -404,6 +404,22 @@
           </form>
         </section>
 
+        <section class="panel" aria-labelledby="physics-title">
+          <h2 id="physics-title">Física</h2>
+          <form class="form" data-testid="physics-form">
+            <div class="numeric" data-testid="physics-rows"></div>
+            <div class="buttons">
+              <button type="button" data-testid="physics-reset">Restaurar padrões</button>
+            </div>
+            <p class="hint" data-testid="physics-status">Vale a partir da próxima rolagem.</p>
+            <p class="hint">
+              A física muda a trajetória e a duração, nunca o valor: ele é decidido antes da
+              animação. Role de novo e compare a duração, as tentativas e os dados recuperados no
+              painel de desempenho.
+            </p>
+          </form>
+        </section>
+
         <section class="panel" aria-labelledby="display-title">
           <h2 id="display-title">Exibição</h2>
           <div class="form">
@@ -425,16 +441,28 @@
                 </select>
               </label>
             </div>
-            <label>
-              Rolagens simultâneas
-              <select data-testid="concurrency-select">
-                <option value="queue">Fila (padrão)</option>
-                <option value="replace">Substituir a anterior</option>
-              </select>
-            </label>
+            <div class="pair">
+              <label>
+                Rolagens simultâneas
+                <select data-testid="concurrency-select">
+                  <option value="queue">Fila (padrão)</option>
+                  <option value="replace">Substituir a anterior</option>
+                </select>
+              </label>
+              <label>
+                Teto de quadros
+                <select data-testid="maxfps-select">
+                  <option value="">Taxa do monitor</option>
+                  <option value="60">60 por segundo</option>
+                  <option value="30">30 por segundo</option>
+                  <option value="15">15 por segundo</option>
+                </select>
+              </label>
+            </div>
             <p class="hint">
               São opções de criação do motor: mudar recarrega a página. Qualidade efetiva:
-              <strong data-testid="quality-effective">—</strong>.
+              <strong data-testid="quality-effective">—</strong>. A automática começa em alta (ou
+              baixa, com WebGL por software) e desce se os quadros medidos ficarem lentos.
             </p>
           </div>
         </section>
@@ -454,10 +482,13 @@
         </section>
 
         <section class="panel" aria-labelledby="stats-title">
-          <h2 id="stats-title">Medições da última rolagem</h2>
-          <dl class="readout">
+          <h2 id="stats-title">Desempenho</h2>
+          <h3 class="subhead">Última rolagem</h3>
+          <dl class="readout compact">
             <dt>Pré-simulação</dt>
             <dd data-testid="stat-presim">—</dd>
+            <dt>Maior trecho sem pausa</dt>
+            <dd data-testid="perf-longest-task">—</dd>
             <dt>Tentativas</dt>
             <dd data-testid="stat-attempts">—</dd>
             <dt>Colisões</dt>
@@ -467,6 +498,65 @@
             <dt>Dados recuperados</dt>
             <dd data-testid="stat-recovered">—</dd>
           </dl>
+          <h3 class="subhead">Quadros</h3>
+          <dl class="readout compact">
+            <dt>Agora</dt>
+            <dd data-testid="perf-fps">—</dd>
+            <dt>Última animação</dt>
+            <dd data-testid="perf-session">—</dd>
+            <dt>Intervalo: mediana · p95 · máx.</dt>
+            <dd data-testid="perf-frame">—</dd>
+            <dt>CPU por quadro: mediana · p95</dt>
+            <dd data-testid="perf-cpu">—</dd>
+          </dl>
+          <h3 class="subhead">Cena e memória</h3>
+          <dl class="readout compact">
+            <dt>Dados na mesa</dt>
+            <dd data-testid="perf-dice">—</dd>
+            <dt>Desenhos · triângulos</dt>
+            <dd data-testid="perf-draw">—</dd>
+            <dt>GPU: geometrias · texturas</dt>
+            <dd data-testid="perf-gpu">—</dd>
+            <dt>Partículas</dt>
+            <dd data-testid="perf-particles">—</dd>
+            <dt>Memória de JS</dt>
+            <dd data-testid="perf-heap">—</dd>
+            <dt>Canvas</dt>
+            <dd data-testid="perf-canvas">—</dd>
+            <dt>Qualidade</dt>
+            <dd data-testid="perf-quality">—</dd>
+            <dt>Reduções de qualidade</dt>
+            <dd data-testid="perf-quality-drops">—</dd>
+            <dt>Contexto gráfico</dt>
+            <dd data-testid="perf-context">—</dd>
+            <dt>Perdas · restaurações</dt>
+            <dd data-testid="perf-context-count">—</dd>
+            <dt>Concluídas · falhas · recuperadas</dt>
+            <dd data-testid="perf-rolls">—</dd>
+          </dl>
+          <div class="buttons">
+            <button type="button" data-testid="context-lose">Perder contexto</button>
+            <button type="button" data-testid="context-restore">Restaurar contexto</button>
+          </div>
+          <p class="hint" data-testid="perf-events" aria-live="polite">—</p>
+          <div class="buttons">
+            <button type="button" data-testid="bench-run">Rodar benchmark</button>
+            <button type="button" data-testid="bench-copy" hidden>Copiar resultado</button>
+          </div>
+          <textarea
+            data-testid="bench-output"
+            class="bench-output"
+            rows="8"
+            readonly
+            hidden
+            aria-label="Resultado do benchmark"
+          ></textarea>
+          <p class="hint">
+            Todos os valores são medidos pelo motor ou informados pelo navegador. O motor não mede o
+            tempo de GPU: o que aparece é o intervalo entre quadros. O benchmark recarrega a página,
+            roda uma bateria fixa e mostra uma tabela pronta para
+            <code>docs/BENCHMARKS.md</code>.
+          </p>
         </section>
 
         <section class="panel" aria-labelledby="env-title">

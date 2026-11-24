@@ -2,7 +2,7 @@ import type { AudioState, AudioStats, Surface } from '../audio';
 import type { RemoteStats } from '../core/remote';
 import type { DieType, RollId, RollMetadata } from '../core/types';
 import type { EffectLevel, EffectLevelSetting, EffectStats } from '../effects/types';
-import type { Presentation, RenderQuality } from '../renderer/types';
+import type { Presentation, RenderQuality, RenderStats } from '../renderer/types';
 import type { RollConcurrency } from './options';
 
 /** Fase de uma rolagem dentro do motor. */
@@ -32,7 +32,10 @@ export interface EngineState {
   diceOnTable: number;
   concurrency: RollConcurrency;
   presentation: Presentation;
+  /** Qualidade efetiva. Com `quality: 'auto'`, pode descer durante o uso. */
   quality: RenderQuality;
+  /** `lost` enquanto o navegador não devolve o contexto gráfico: nada é desenhado. */
+  context: 'active' | 'lost';
   defaultTheme: string;
   /** Temas registrados, em ordem de registro. */
   themes: readonly string[];
@@ -58,11 +61,15 @@ export interface EngineStats {
   };
   simulation: {
     /** A última pré-simulação, ou `null` antes da primeira. */
-    last: { attempts: number; cpuTimeMs: number } | null;
+    last: { attempts: number; cpuTimeMs: number; longestTaskMs: number } | null;
     /** Soma das pré-simulações que chegaram à mesa. */
     totalAttempts: number;
     totalCpuTimeMs: number;
+    /** Maior trecho em que uma pré-simulação segurou a thread, em milissegundos. */
+    longestTaskMs: number;
   };
+  /** Quadros, chamadas de desenho, memória de GPU e contexto. Ver `RenderStats`. */
+  render: RenderStats;
   remote: RemoteStats;
   audio: AudioStats;
   effects: EffectStats;
