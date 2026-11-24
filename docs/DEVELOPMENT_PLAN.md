@@ -10,15 +10,15 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | 4     | Resultados controlados | ✅ Concluída         |
 | 5     | Materiais e temas      | ✅ Concluída         |
 | 6     | Sonorização            | ✅ Concluída         |
-| 7     | Efeitos visuais        | Aguardando aprovação |
-| 8     | API e integração       | —                    |
+| 7     | Efeitos visuais        | ✅ Concluída         |
+| 8     | API e integração       | Aguardando aprovação |
 | 9     | Otimização e validação | —                    |
 
 ## Como retomar o trabalho
 
 Este documento basta para continuar o projeto em uma sessão nova, sem depender de conversas anteriores.
 
-**Onde estamos.** Etapas 1 a 6 concluídas (versão 0.6.0). A próxima é a **Etapa 7 — Efeitos visuais**, que ainda não foi iniciada e depende de aprovação.
+**Onde estamos.** Etapas 1 a 7 concluídas (versão 0.7.0). A próxima é a **Etapa 8 — API e integração**, que ainda não foi iniciada e depende de aprovação.
 
 **O que ler, nesta ordem:**
 
@@ -216,33 +216,46 @@ Descobertas desta etapa:
 - **Duas execuções completas de `npm run test:e2e` falharam com páginas paradas em "iniciando…"**, e as quatro seguintes passaram sem mudança. A causa não foi identificada.
 - **O planejamento custa de 0,1 ms (1 dado) a 4 ms (30 dados)** na mediana e roda antes do primeiro quadro.
 
-## Etapa 7 — Efeitos visuais (próxima)
+## Etapa 7 — Efeitos visuais ✅
 
-Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 9 (efeitos especiais) e 13 (painel de efeitos).
+Camada de efeitos em grupo próprio na cena: dez efeitos internos, gatilhos declarados no pedido com condição por dados, chamada direta, presets da aplicação, efeitos de tema, níveis `off`/`reduced`/`full`/`auto` e painel de efeitos. Decisões em [ADR 0011](adr/0011-efeitos-visuais.md).
 
-**O que construir:**
+| Critério de aceite                                           | Evidência                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Disparo por evento e por chamada                             | `tests/unit/effect-trigger.test.ts`: validação dos gatilhos, RNG não consumido e `planEffectTriggers` (tipo, `role`, valor, ids, d100 pelo valor lógico). `tests/integration/effects.test.ts`, com Rapier real: `settled` no quadro em que o dado para, `start` junto com `rollStarted`, `completed` antes de `rollCompleted`, modos autônomo e controlado, efeitos de tema e `trigger()` direto. `tests/e2e/effects.spec.ts`: gatilho do pedido pelo formulário e botões do painel no navegador. |
+| No `off`, nenhum objeto de efeito é criado na cena           | `tests/unit/effects.test.ts`: nenhum grupo, objeto ou recurso, por mais disparos que receba. Integração: rolagens com gatilhos, temas com efeitos e `trigger()`, sem `addObject` nem grupo. E2E com `?effects=off`: `created`, `objects`, `active` e `particles` em zero depois de rolagens e de clicar em todos os botões do painel.                                                                                                                                                             |
+| `reduced` respeitado, inclusive por `prefers-reduced-motion` | Unidade: no `reduced`, nenhum `Points` e nenhum quadro pedido por efeitos parados; `auto` segue a preferência e a mudança dela; nível explícito vale acima. E2E com `page.emulateMedia({ reducedMotion: 'reduce' })`: o automático vira reduzido, `critical` e `aura` não criam partículas, e o nível volta a completo quando a preferência muda, sem recarregar. Capturas `critico-falha-reduzido` e `critico-falha-completo`.                                                                   |
+| Descarte de recursos verificado                              | Unidade: `created === disposed` ao fim de cada efeito, em `stop`, `stopForDice`, `stopAll` e `dispose`; texturas compartilhadas liberadas com o último uso. Integração: rolagem substituída, cancelamento, `clear`, 20 rolagens e `destroy`. E2E: depois de 20 rolagens com `critical` e `trail`, `renderer.info.memory` (geometrias e texturas) volta ao valor de antes; durante os efeitos ele é maior, então a medição enxerga os efeitos.                                                     |
 
-- Camada independente de efeitos: partículas, brilhos, rastros, auras, explosões visuais, efeitos elementais, destaque de dados específicos e animações para críticos e falhas.
-- Disparo por eventos configuráveis, nunca por regra fixa de RPG: a aplicação decide que um resultado merece um efeito. Dois caminhos previstos: gatilhos declarados no pedido de rolagem e chamada direta (`engine.effects.trigger`).
-- Níveis `off`, `reduced` e `full` (`engine.effects.setLevel` e opção `effects` de `DiceEngine.create`), para acessibilidade e desempenho.
-- Painel de efeitos no playground.
+Além dos critérios:
 
-**Critérios de aceite:**
+- **O efeito não muda o resultado:** o mesmo pedido, com e sem efeitos, dá os mesmos valores, faces e trajetórias; os dados não se mexem enquanto efeitos animam depois da conclusão (integração).
+- **Laço de render:** um efeito animado mantém o laço depois de `rollCompleted` e o libera ao terminar; um efeito parado é desenhado uma vez e removido por temporizador (integração).
+- **Efeito desconhecido** no pedido, no tema ou em `trigger` avisa uma vez e não falha a rolagem.
+- **Limites:** teto de partículas somando todos os efeitos, um flash a cada 400 ms, a mesma semente produz as mesmas partículas (unidade).
+- **Capturas de referência dos efeitos:** `tests/visual/effects.spec.ts`, 3 capturas com relógio parado (crítico, falha e fogo em `full` e em `reduced`; brilho da Esperança e aura do Medo), estáveis em duas execuções seguidas. As 10 capturas de materiais continuam iguais.
+- **Custo de CPU por quadro:** menos de 0,05 ms no p95 com 30 dados em `critical`; números em [BENCHMARKS.md](BENCHMARKS.md#efeitos-etapa-7).
+- **Inspeção visual** pelas capturas do Playwright: o halo aditivo funciona sobre o canvas transparente do overlay.
 
-- Disparo por evento e por chamada.
-- No nível `off`, nenhum objeto de efeito é criado na cena.
-- Nível `reduced` respeitado, inclusive por `prefers-reduced-motion`.
-- Descarte de recursos verificado.
+Mudanças em relação ao plano:
 
-**O que já existe e condiciona a etapa:**
+- **Rastro feito de partículas, não de fita.** O plano previa `ribbon.ts`. As partículas deixadas pelo caminho, em quantidade proporcional à distância percorrida, dão um rastro parecido com o mesmo emissor dos outros efeitos, sem refazer geometria a cada quadro.
+- **Arquivos diferentes dos previstos:** em vez de `primitives/` e `textures.ts`, as peças estão em `parts.ts` e as texturas e a contagem de recursos em `resources.ts`.
+- **`failure` mais forte que o previsto:** o anel vermelho tênue sumia sobre mapas escuros. Ganhou opacidade, um halo e fumaça mais clara e densa.
+- **No `reduced`, `burst` tem um anel que some devagar.** É a única animação do nível: só opacidade, sem movimento.
+- **Mudar o nível interrompe os efeitos em andamento**, em vez de convertê-los para o nível novo.
+- **API um pouco maior:** além do previsto, `levelSetting` (o nível pedido, inclusive `auto`) e `has(nome)`.
+- **`?effects=off|reduced|full`** no playground, para os testes e as capturas. As capturas de materiais passaram a usar `effects=off`, porque Esperança e Medo agora têm efeitos de tema.
+- **O teste de memória de GPU lê `renderer.info.memory` por um caminho interno** do motor, em vez de um gancho de teste exposto. O motor não expõe o renderer, e um gancho público só para o teste não se justificava.
 
-- `src/effects/` está vazio e pode importar de `core` e de `three`.
-- `engine.getDiceOnTable()` devolve a posição e a orientação reais de cada dado, e os eventos `diceSettled` e `rollCompleted` marcam os instantes naturais para disparar efeitos.
-- O `WebGLRenderer` foi escolhido em parte por manter `ShaderMaterial` e `EffectComposer` disponíveis ([ADR 0005](adr/0005-stack-tecnica.md)).
-- O laço de render só roda enquanto há animação. Efeitos que duram além da rolagem precisam mantê-lo ativo e liberá-lo ao terminar.
-- O áudio (Etapa 6) mostra um caminho para efeitos ligados à rolagem: um planejador puro lê a gravação (`recording.collisions` e trajetórias) e devolve uma lista com instantes, e o `integration` agenda essa lista e a interrompe ao cancelar, limpar ou destruir ([ADR 0010](adr/0010-audio.md)).
+Descobertas desta etapa:
 
-## Etapa 8 — API e integração
+- **A intensidade não alcançava anel e halo.** Só as partículas respondiam a `intensity`, então `highlight`, `glow` e todo efeito no `reduced` ignoravam a opção. Encontrado ao documentar a API; corrigido (opacidade e tamanho) e coberto por teste.
+- **O painel do navegador embutido, oculto, quase não anima:** o `requestAnimationFrame` cai para cerca de 4 quadros por segundo, e o fogo parecia não aparecer. Não é defeito do motor; a inspeção visual foi feita pelas capturas do Playwright.
+- **Efeitos parados não podem manter o laço de render ligado:** um halo de 2,5 s no `reduced` desenharia 150 quadros iguais. Daí o temporizador.
+- **O comentário de `ThemeConfig.soundProfile`** ainda dizia "sem efeito", desde a Etapa 6; corrigido junto com o de `effects`.
+
+## Etapa 8 — API e integração (próxima)
 
 Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 11 (API pública), 12 (multiplayer) e 13 (painel de integração).
 
@@ -252,6 +265,7 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 11 (API pública), 12
 - Contratos para receber eventos de um servidor externo (`engine.remote.receive`). A proposta de `RollEnvelope` está em [API.md](API.md): identificadores de rolagem, jogador e sala, sequência, versão de protocolo e visibilidade.
 - Tratamento de mensagens duplicadas, fora de ordem e de cancelamentos obsoletos.
 - Simulador de eventos externos no playground (painel de integração). **Não** construir um backend.
+- Os gatilhos de efeito (`RollRequest.effects`) viajam no pedido; presets registrados (`engine.effects.register`) não, e um cliente sem o preset só avisa ([ADR 0011](adr/0011-efeitos-visuais.md)).
 - Exemplos mínimos de integração em JavaScript e em TypeScript, validados por teste.
 
 **Critérios de aceite:**
@@ -305,7 +319,7 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e esta
 | Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.                                              |
 | Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.                                         |
 | Áudio          | 6     | Pronto: liga e desliga, volume, superfície, impactos de teste por perfil, sons especiais e vozes medidas. |
-| Efeitos        | 7     | —                                                                                                         |
+| Efeitos        | 7     | Pronto: nível, intensidade, cor, duração, disparo por efeito, regras de exemplo e estatísticas medidas.   |
 | Integração     | 8     | —                                                                                                         |
 | Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados.                                      |
 | Física         | 9     | —                                                                                                         |
@@ -315,7 +329,7 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e esta
 Itens observados no caminho que não pertencem a uma etapa específica ou que precisam ser lembrados:
 
 - **Sem integração contínua.** Os testes rodam só localmente. Um workflow no GitHub que rode tipos, lint e testes a cada push não está no plano e depende de decisão.
-- **Campos aceitos e ainda sem efeito:** `visibility` em `metadata` (Etapa 8); `effects` (Etapa 7) nos temas.
+- **Campo aceito e ainda sem efeito:** `visibility` em `metadata` (Etapa 8).
 - **Capturas visuais por sistema operacional.** Só há referências para Windows, geradas com WebGL por software. Em outro sistema, a primeira execução de `tests/visual` precisa de `--update-snapshots` e de conferência das imagens.
 - **Vidro e cristal na bandeja** ficam escuros sobre o feltro escuro: a transmissão mostra o que está atrás ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - **Capacidade.** Em densidades extremas, abaixo de cerca de 3 unidades² por dado, ainda há falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md)).
@@ -326,6 +340,8 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 - **Muitos dados, muitos sons descartados.** Com 20 ou mais dados, o limite de 16 vozes deixa de fora a maioria dos impactos fracos ([BENCHMARKS.md](BENCHMARKS.md#áudio-etapa-6)). `maxVoices` vai até 64.
 - **Uma superfície por motor.** O som de todos os dados usa a mesma superfície (`wood` ou `felt`), não o que está sob cada dado.
 - **Falhas intermitentes no `npm run test:e2e`.** Duas execuções completas pararam com páginas em "iniciando…" durante a Etapa 6; as quatro seguintes passaram. A causa não foi identificada.
+- **Custo de GPU dos efeitos não medido.** O custo de CPU é pequeno ([BENCHMARKS.md](BENCHMARKS.md#efeitos-etapa-7)); o de desenho depende da área coberta pelos halos e partículas aditivos e da placa. Fica para a Etapa 9.
+- **Aparência dos efeitos** verificada só em capturas com WebGL por software; falta olhar em um navegador com GPU. Não há teste automático para "parece bom".
 - **Medições em uma única máquina.** Todos os números de `BENCHMARKS.md` vêm do mesmo computador.
 
 ## Decisões pendentes
@@ -339,6 +355,7 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 
 Decididas:
 
+- Efeitos: gatilhos no pedido com condição por dados, `ThemeConfig.effects` com efeito, nível padrão `auto` (segue `prefers-reduced-motion`) e presets em JSON sobre os efeitos internos ([ADR 0011](adr/0011-efeitos-visuais.md)).
 - Áudio: amostras CC0 da Kenney em arquivos separados com síntese de reserva, ligado por padrão (volume 0,8), desbloqueio automático no primeiro gesto, madeira no overlay e feltro na bandeja ([ADR 0010](adr/0010-audio.md)).
 - Temas e materiais: aparência padrão marfim, fonte OFL incluída, texturas procedurais, efeito físico moderado e tema desconhecido com o padrão ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - Recuperação por empurrão dentro da simulação e lançamento dirigido para dados sem simetria ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).

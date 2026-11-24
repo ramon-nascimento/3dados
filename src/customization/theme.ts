@@ -57,9 +57,12 @@ export interface ThemeConfig {
   emissive?: ThemeEmissive;
   /** Largura do chanfro das arestas, em unidades (aresta do d6 = 1). Só visual. */
   bevel?: number;
-  /** Reservado para a Etapa 7 (efeitos). Preservado, sem efeito. */
+  /**
+   * Efeitos que acompanham todo dado do tema: `trail` enquanto ele rola, os
+   * demais quando ele para. Nome desconhecido: aviso no console, sem erro.
+   */
   effects?: string[];
-  /** Reservado para a Etapa 6 (áudio). Preservado, sem efeito. */
+  /** Perfil sonoro (um de `SOUND_PROFILES`); ausente usa o do material. */
   soundProfile?: string;
 }
 

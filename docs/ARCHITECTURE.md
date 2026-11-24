@@ -21,15 +21,15 @@ A tabela é definida em [`eslint.boundaries.js`](../eslint.boundaries.js) e exer
 
 ## Módulos
 
-| Módulo          | Responsabilidade                                                                                                                                                                                                               |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `core`          | Definições de dados como dados puros (vértices, faces, direção de leitura e valor de cada face), registro de dados, validação de pedidos, RNG, leitura de face, grupo de simetria, eventos, erros.                             |
-| `physics`       | Pré-simulação: lançamento semeado, passo fixo, detecção de estabilização, gravação da trajetória e da linha do tempo de colisões, critérios de rejeição.                                                                       |
-| `renderer`      | Cena, câmera, luzes, sombras, malhas, atlas de números, materiais, reprodução da trajetória, redimensionamento, perda de contexto, descarte de recursos.                                                                       |
-| `customization` | Esquema de tema serializável e versionado, validação, migração, presets de material (aparência, parâmetros físicos e perfil sonoro).                                                                                           |
-| `audio`         | Planejamento dos sons a partir da gravação (impactos, tombos, lançamento, estabilização), banco de amostras com síntese de reserva, limite de vozes, variação de ganho e altura, compressor, desbloqueio por gesto do usuário. |
-| `effects`       | Registro de efeitos visuais, níveis `off`/`reduced`/`full`, disparo por evento ou por chamada.                                                                                                                                 |
-| `integration`   | Fachada `DiceEngine`, fila de rolagens, contratos de mensagens externas, deduplicação e ordenação.                                                                                                                             |
+| Módulo          | Responsabilidade                                                                                                                                                                                                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `core`          | Definições de dados como dados puros (vértices, faces, direção de leitura e valor de cada face), registro de dados, validação de pedidos, RNG, leitura de face, grupo de simetria, eventos, erros.                                                                                      |
+| `physics`       | Pré-simulação: lançamento semeado, passo fixo, detecção de estabilização, gravação da trajetória e da linha do tempo de colisões, critérios de rejeição.                                                                                                                                |
+| `renderer`      | Cena, câmera, luzes, sombras, malhas, atlas de números, materiais, reprodução da trajetória, redimensionamento, perda de contexto, descarte de recursos.                                                                                                                                |
+| `customization` | Esquema de tema serializável e versionado, validação, migração, presets de material (aparência, parâmetros físicos e perfil sonoro).                                                                                                                                                    |
+| `audio`         | Planejamento dos sons a partir da gravação (impactos, tombos, lançamento, estabilização), banco de amostras com síntese de reserva, limite de vozes, variação de ganho e altura, compressor, desbloqueio por gesto do usuário.                                                          |
+| `effects`       | Camada de efeitos visuais em grupo próprio na cena: catálogo de efeitos internos (anel, halo e emissores de partículas), presets da aplicação, planejamento dos gatilhos do pedido, níveis `off`/`reduced`/`full`/`auto`, teto de partículas, limite de flashes e contagem de recursos. |
+| `integration`   | Fachada `DiceEngine`, fila de rolagens, contratos de mensagens externas, deduplicação e ordenação.                                                                                                                                                                                      |
 
 Regras de separação:
 
@@ -58,8 +58,8 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 3. **Rejeitar e repetir** com outra semente se algum dado não estabilizou, saiu da área, ficou apoiado ou inclinado, ou estourou o tempo. A partir da terceira tentativa, um dado que para mal recebe um empurrão dentro da simulação em vez de invalidar a rolagem ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 4. **Reorientar por simetria**: aplicar à malha, desde o primeiro quadro, a rotação de simetria do poliedro que coloca a face do valor-alvo onde a face física vai terminar para cima ([ADR 0004](adr/0004-reorientacao-por-simetria.md)).
 5. **Verificar** matematicamente o valor que será exibido.
-6. **Reproduzir** a gravação: o renderer interpola, os eventos são emitidos e, com o áudio tocando, os sons planejados a partir da gravação são agendados no relógio do áudio. Os efeitos (Etapa 7) também consumirão a linha do tempo.
-7. **Verificar de novo** lendo a orientação real da malha na cena. Divergência emite `rollFailed`, nunca `rollCompleted`.
+6. **Reproduzir** a gravação: o renderer interpola, os eventos são emitidos e, com o áudio tocando, os sons planejados a partir da gravação são agendados no relógio do áudio. Os efeitos de `start` disparam junto com `rollStarted`, e os de `settled` no quadro em que cada dado para.
+7. **Verificar de novo** lendo a orientação real da malha na cena. Divergência emite `rollFailed`, nunca `rollCompleted`. Só depois dessa leitura disparam os efeitos de `completed`.
 
 ### Limitações conhecidas
 
@@ -122,6 +122,21 @@ Versões e justificativas em [ADR 0005](adr/0005-stack-tecnica.md).
 | Build  | Vite em modo biblioteca, declarações por `tsc`           |
 | Testes | Vitest (unidade, integração) e Playwright (e2e, visual)  |
 
+## Efeitos
+
+Os efeitos não participam da rolagem nem tocam nos dados: vivem em um grupo próprio da cena (`3dados-effects`), criado só no primeiro efeito, e só leem a posição de cada dado ([ADR 0011](adr/0011-efeitos-visuais.md)).
+
+| Peça       | Onde                                        | O que faz                                                                                                                                                                   |
+| ---------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Validação  | `parseEffectTriggers()` (core)              | Forma de `RollRequest.effects`, dentro de `planRoll`; erro `INVALID_REQUEST` com o caminho do campo.                                                                        |
+| Planejador | `planEffectTriggers()`                      | Função pura: dos resultados já fixados e dos gatilhos, a lista de efeitos por dado e por momento. Compara tipo, `role`, valor e id; no d100, o valor lógico.                |
+| Catálogo   | `CATALOG`                                   | Cada efeito interno, com cor, duração, fase (movimento ou repouso) e as peças de `full` e de `reduced`.                                                                     |
+| Peças      | `createRing`, `createHalo`, `createEmitter` | Anel no chão, halo aditivo e emissor de partículas (`Points` com shader próprio), sobre texturas geradas em `DataTexture`.                                                  |
+| Camada     | `DiceEffects`                               | Nível (com `prefers-reduced-motion` por um `EffectsEnvironment` injetável), presets, disparo, atualização por quadro, teto de partículas, limite de flashes e estatísticas. |
+| Recursos   | `EffectResources`                           | Conta `created` e `disposed` de geometrias, materiais e texturas; texturas compartilhadas com contagem de referências.                                                      |
+
+O `integration` planeja os efeitos logo depois do plano da rolagem (gatilhos do pedido mais os efeitos do tema de cada dado), dispara cada um no seu momento e interrompe os efeitos presos aos dados que saem da mesa. O laço de render é compartilhado: roda enquanto há rolagem animando ou efeito animado. Um efeito parado (nível `reduced`) é desenhado uma vez e removido por um temporizador, sem manter o laço ligado. Com o nível `off`, nada disso cria objeto na cena.
+
 ## Testes
 
 | Pasta               | Ferramenta | Escopo                                   |
@@ -143,5 +158,6 @@ Versões e justificativas em [ADR 0005](adr/0005-stack-tecnica.md).
 | Three.js sem versionamento semântico         | Versão exata; uso confinado a `renderer` e `effects`.                                  |
 | Vidro e cristal caros em GPU fraca           | Níveis de qualidade; transmissão só em `high` com bandeja.                             |
 | Autoplay de áudio e licença de sons          | Desbloqueio por gesto; só CC0, com créditos testados; síntese de reserva sem arquivos. |
+| Efeitos desconfortáveis ou caros             | Nível `auto` segue `prefers-reduced-motion`; flash limitado; teto de partículas.       |
 | Perda de contexto WebGL e vazamentos         | Recursos de GPU reconstruíveis; teste de memória após `destroy()`.                     |
 | Testes visuais instáveis entre GPUs          | Semente fixa, quadro congelado, tolerância, plataforma de referência única.            |

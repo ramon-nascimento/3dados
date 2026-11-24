@@ -1,3 +1,4 @@
+import type { EffectTrigger } from './effect-trigger';
 import type { DiceError } from './errors';
 
 /** Identificador único de uma rolagem. Em multiplayer é fornecido pelo servidor. */
@@ -63,6 +64,12 @@ export interface RollRequest {
    */
   seed?: number;
   metadata?: RollMetadata;
+  /**
+   * Efeitos visuais declarados pela aplicação, com a condição em que valem
+   * (ex.: `{ effect: 'critical', when: { type: 'd20', values: [20] } }`). O
+   * motor só compara dados; não decide o que é um crítico. Não muda valores.
+   */
+  effects?: readonly EffectTrigger[];
 }
 
 /** De onde veio o valor de um dado. */

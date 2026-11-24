@@ -42,6 +42,8 @@ class FakeRenderer implements EngineRenderer {
   getDiePosition(dieId: string): Vec3 {
     return this.dice.get(dieId)!.position;
   }
+  addObject(): void {}
+  removeObject(): void {}
   startLoop(onFrame: () => void): void {
     this.loop = onFrame;
   }

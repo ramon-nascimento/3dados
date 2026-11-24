@@ -1,8 +1,8 @@
 # 3dados
 
-Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
+Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual, efeitos visuais e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 6 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal) e áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície). Ainda não há efeitos visuais. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 7 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal), áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície) e efeitos visuais (brilhos, auras, rastros, explosões, elementais, destaque, crítico e falha) disparados por condições que a aplicação declara, com níveis de acessibilidade. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 
@@ -47,17 +47,17 @@ Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
 
 ## Comandos
 
-| Comando                           | O que faz                                                  |
-| --------------------------------- | ---------------------------------------------------------- |
-| `npm install`                     | Instala as dependências.                                   |
-| `npm run dev`                     | Abre o playground em `http://localhost:5173`.              |
-| `npm run typecheck`               | Checagem de tipos.                                         |
-| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.       |
-| `npm test`                        | Testes unitários e de integração (Vitest).                 |
-| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas.   |
-| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).                 |
-| `npm run bench`                   | Medições da pré-simulação e do áudio (fora do `npm test`). |
-| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).          |
+| Comando                           | O que faz                                                               |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| `npm install`                     | Instala as dependências.                                                |
+| `npm run dev`                     | Abre o playground em `http://localhost:5173`.                           |
+| `npm run typecheck`               | Checagem de tipos.                                                      |
+| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.                    |
+| `npm test`                        | Testes unitários e de integração (Vitest).                              |
+| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas.                |
+| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).                              |
+| `npm run bench`                   | Medições da pré-simulação, do áudio e dos efeitos (fora do `npm test`). |
+| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).                       |
 
 ## Estrutura
 

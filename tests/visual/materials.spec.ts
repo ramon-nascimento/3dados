@@ -26,7 +26,9 @@ function showcase(theme: string): RollRequest {
 }
 
 async function capture(page: Page, query: string, request: RollRequest, name: string) {
-  await page.goto(`/${query}`);
+  // Só os materiais: os efeitos (inclusive os de tema, como os de Esperança e
+  // Medo) animam e têm capturas próprias em effects.spec.ts.
+  await page.goto(`/${query}&effects=off`);
   await expect(page.getByTestId('roll-status')).toHaveText('pronto');
   const outcome = (await page.evaluate(async (req) => {
     const engine = (

@@ -20,6 +20,13 @@ export type {
 export { createDieDefinition } from './core/polyhedron';
 export type { FaceSpec, HullFace } from './core/polyhedron';
 export type { DieDefinition, DieFace, FaceLabel } from './core/die-definition';
+export { EFFECT_LIMITS, EFFECT_MOMENTS } from './core/effect-trigger';
+export type {
+  EffectCondition,
+  EffectMoment,
+  EffectOptions,
+  EffectTrigger,
+} from './core/effect-trigger';
 export type { Quat, Vec3 } from './core/math';
 
 export { DiceEngine } from './integration/engine';
@@ -63,6 +70,19 @@ export type {
   SoundSource,
   Surface,
 } from './audio';
+
+export { EFFECTS } from './effects';
+export type {
+  BuiltinEffect,
+  DiceEffectsControls,
+  EffectHandle,
+  EffectLevel,
+  EffectLevelSetting,
+  EffectPreset,
+  EffectStats,
+  EffectTriggerOptions,
+  EffectsOptions,
+} from './effects';
 
 export { createCryptoRandomSource, createSeededRandomSource } from './core/random';
 export type { RandomSource } from './core/random';
