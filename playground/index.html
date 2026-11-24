@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3dados — Playground</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>3dados <span class="muted">playground</span></h1>
+      <span class="badge">v<span data-testid="engine-version"></span></span>
+    </header>
+
+    <main class="layout">
+      <section class="stage" aria-label="Área de rolagem">
+        <p class="stage-empty" data-testid="stage-empty">
+          Nenhum dado ainda. A primeira rolagem chega na Etapa 2.
+        </p>
+      </section>
+
+      <aside class="panel" aria-label="Diagnóstico do ambiente">
+        <h2>Ambiente</h2>
+        <dl class="diagnostics" data-testid="diagnostics"></dl>
+      </aside>
+    </main>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
