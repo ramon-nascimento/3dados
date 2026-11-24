@@ -65,6 +65,9 @@ assets/         assets de terceiros e seus créditos
 
 ## Documentação
 
+Para continuar o desenvolvimento, comece por [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md): ele diz em que etapa o projeto está, o que fazer a seguir e como conduzir o trabalho.
+
+- [Especificação original](docs/PROJECT_BRIEF.md)
 - [Arquitetura](docs/ARCHITECTURE.md)
 - [API](docs/API.md)
 - [Plano de desenvolvimento](docs/DEVELOPMENT_PLAN.md)

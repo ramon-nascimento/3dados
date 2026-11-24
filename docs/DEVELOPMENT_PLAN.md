@@ -14,6 +14,42 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | 8     | API e integração       | —                    |
 | 9     | Otimização e validação | —                    |
 
+## Como retomar o trabalho
+
+Este documento basta para continuar o projeto em uma sessão nova, sem depender de conversas anteriores.
+
+**Onde estamos.** Etapas 1 a 4 concluídas (versão 0.4.0). A próxima é a **Etapa 5 — Materiais e temas**, que ainda não foi iniciada e depende de aprovação e de três decisões listadas na própria etapa.
+
+**O que ler, nesta ordem:**
+
+1. Este documento: a seção da etapa atual e as "Pendências conhecidas".
+2. [PROJECT_BRIEF.md](PROJECT_BRIEF.md): a especificação original. Cada etapa abaixo aponta as seções relevantes.
+3. [ARCHITECTURE.md](ARCHITECTURE.md): módulos, ciclo de vida de uma rolagem e limitações.
+4. [API.md](API.md): o que existe hoje e o que está apenas proposto.
+5. Os [ADRs](adr/): as decisões já tomadas e seus motivos. Não as refaça sem necessidade.
+6. [BENCHMARKS.md](BENCHMARKS.md): medições e o hardware em que foram feitas.
+
+**Como conduzir uma etapa:**
+
+1. Apresente um plano curto da etapa (o que será construído, como se liga ao que existe e quais decisões cabem ao responsável pelo projeto) e **aguarde a aprovação**.
+2. Implemente só essa etapa. Não adiante funcionalidades de etapas futuras.
+3. Valide: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, `npm run test:e2e`. Meça com `npm run bench` quando a etapa afetar desempenho ou convergência.
+4. Atualize a documentação: este plano (critérios com evidência, desvios e descobertas), `API.md`, `ARCHITECTURE.md`, `INTEGRATION_GUIDE.md`, `CHANGELOG.md`, um ADR novo para cada decisão relevante, e a versão em `package.json` e `src/version.ts`.
+5. Pare e relate: critérios de aceite com evidência, desvios do plano com o motivo, e ressalvas. Aguarde a aprovação antes da etapa seguinte.
+
+**Regras de trabalho:**
+
+- Commit só quando pedido. Push só quando pedido, em pedido separado.
+- Documentação em PT-BR; identificadores e nomes de API em inglês; comentários de código em português.
+- Licença MIT: só assets redistribuíveis (CC0 de preferência), registrados em [assets/CREDITS.md](../assets/CREDITS.md) antes de entrar.
+- Não consultar nem copiar código, modelos, texturas ou sons de outros VTTs. O Dice So Nice é AGPL.
+- Não adicionar dependência sem justificar. Não inventar APIs: conferir a documentação e as versões instaladas (`three` está fixo em 0.187.0, sem `^`).
+- Medições sempre reais e com o hardware identificado. Nada de meta de desempenho fictícia.
+- Uma funcionalidade só está concluída depois de validada.
+- Regras centrais do motor: o valor é decidido antes da animação; a aparência nunca participa do cálculo do resultado; uma rolagem só conclui depois de conferir o que está na tela; regras de RPG não entram no motor.
+
+**Ambiente:** Node ≥ 22.12 e npm. O playground roda com `npm run dev` em `http://localhost:5173`. Os testes de navegador usam o headless shell do Playwright com WebGL por software; ver as observações da Etapa 1.
+
 ## Etapa 1 — Fundação ✅
 
 Estrutura do projeto, tooling, contratos do núcleo (tipos, eventos, erros, RNG) e documentação inicial.
@@ -108,44 +144,114 @@ Descobertas desta etapa:
 - **A primeira rolagem da página era até dez vezes mais lenta.** Com busca, chegou a 552 ms no navegador. O motor agora aquece a física ao ser criado, e a mesma rolagem leva 69 ms.
 - **O lançamento dirigido é visível.** No tijolo de exemplo ele aparece em um terço das rolagens autônomas. É a principal ressalva para quem criar dados sem simetria.
 
-## Etapa 5 — Materiais e temas
+## Etapa 5 — Materiais e temas (próxima)
 
-Plástico, madeira, pedra, metal, vidro e cristal; esquema de tema versionado; salvar e carregar.
+Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 7 (personalização visual), 10 (Esperança e Medo distinguíveis) e 13 (painel de personalização).
 
-Critérios de aceite:
+**O que construir:**
+
+- Seis materiais: plástico, madeira, pedra, metal, vidro e cristal, com aparência distinta e parâmetros físicos coerentes quando aplicável.
+- Tema serializável e versionado, cobrindo: cor principal, cor secundária, cor dos números, tipografia, textura, material, transparência, rugosidade, metalicidade, emissão, formato geométrico e efeitos associados. A proposta de `ThemeConfig`, `parseTheme` e `serializeTheme` está em [API.md](API.md), na seção "Proposto".
+- Registro e uso de temas: `engine.registerTheme`, `engine.setDefaultTheme` e o campo `theme` de `DieSpec`, que hoje é aceito e ignorado. Dois d12 com temas diferentes na mesma rolagem precisam ser distinguíveis.
+- Salvar e carregar aparências criadas pelo usuário.
+- Opções `presentation` (`overlay` ou `tray`) e `quality` de `DiceEngine.create`.
+- Painel de personalização no playground.
+
+**Critérios de aceite:**
 
 - Serialização de ida e volta sem perda.
 - Tema inválido rejeitado com erro claro; migração de versão testada.
 - Capturas visuais de referência por material.
 - Alterar o tema não altera nenhum resultado.
 
+**Decisões que cabem ao responsável pelo projeto, ainda em aberto:**
+
+| Decisão                     | Situação atual                              | Alternativas                                                                                  |
+| --------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Aparência padrão dos dados  | Vermelho com números claros, provisório.    | Uma identidade visual definida pelo responsável, ou um padrão neutro proposto na etapa.       |
+| Tipografia dos números      | Fonte do sistema, que varia entre máquinas. | Incluir no pacote uma fonte de licença livre (OFL), para a mesma aparência em todo lugar.     |
+| Texturas de madeira e pedra | Não existem.                                | Geradas por código, sem arquivos (mais simples), ou texturas CC0 em arquivo (mais realistas). |
+
+**O que já existe e condiciona a etapa:**
+
+- `src/customization/` está vazio e só pode importar de `core`. O renderer pode importar de `core` e de `customization`. As fronteiras são impostas por lint e têm teste.
+- A aparência atual é fixa: `DEFAULT_LABEL_STYLE` em `src/renderer/dice-renderer.ts`.
+- O renderer cria geometria, textura e material uma vez por **tipo** de dado (`resourcesFor`). Com temas, a chave precisa incluir o tema, e os recursos precisam ser descartados quando deixarem de ser usados.
+- O atlas de rótulos (`src/renderer/label-atlas.ts`) pinta uma célula por face e reserva uma célula livre, de cor uniforme, para o chanfro. Texturas com padrão exigem rever o mapeamento do chanfro.
+- A iluminação é uma luz ambiente e uma direcional, sem mapa de ambiente. Metal, vidro e cristal precisam de reflexos: `RoomEnvironment` com `PMREMGenerator` funciona sem rede.
+- Transmissão (vidro e cristal) custa uma passada extra de render. O previsto é usá-la só no nível de qualidade alto e recorrer a mistura alfa nos demais.
+- `tests/visual/` já está no `testMatch` do Playwright, sem testes. As capturas de referência são por sistema operacional e, com WebGL por software, não representam uma GPU real.
+- Parâmetros físicos por material (atrito, restituição) entram por `PhysicsConfig`, que hoje é único para a rolagem inteira.
+- `soundProfile` do tema fica apenas reservado: o áudio é a Etapa 6.
+- Validadores escritos à mão, sem dependência nova, como em `src/core/validate-die.ts`.
+
 ## Etapa 6 — Sonorização
 
-Sons de lançamento, colisão, rolagem, estabilização e sons especiais definidos pela aplicação.
+Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 8 (sistema de áudio) e 13 (painel de áudio).
 
-Critérios de aceite:
+**O que construir:**
+
+- Sons de lançamento, colisão, dados rolando, estabilização (quando fizer sentido) e sons especiais para resultados definidos pela aplicação.
+- Som contextual, que considere: material do dado, material da superfície, intensidade da colisão, quantidade de dados em movimento, intervalo entre impactos e volume configurado.
+- Controle de sobreposição (limite de vozes) e variação de volume e de altura para evitar repetição.
+- Respeito à política de autoplay dos navegadores e possibilidade de desligar o áudio por completo.
+- API `engine.audio` (`setEnabled`, `setVolume`, `unlock`) e opção `audio` de `DiceEngine.create`.
+- Painel de áudio no playground: escolher perfis sonoros e testar impactos.
+
+**Critérios de aceite:**
 
 - Nenhum `AudioContext` é criado com o áudio desligado.
 - Limite de vozes respeitado com 20 dados.
 - Mapeamento de intensidade para ganho testado.
 - `assets/CREDITS.md` completo.
 
+**O que já existe e condiciona a etapa:**
+
+- Decisão tomada: Web Audio API nativa, sem Howler ([ADR 0005](adr/0005-stack-tecnica.md)). Amostras em MP3 ou WAV; Vorbis e Opus não são confiáveis no Safari.
+- A gravação da simulação já traz uma linha do tempo de colisões (`recording.collisions`) e o evento `diceCollided`, com intensidade de 0 a 1. Hoje só há registro do **início** de cada contato: o rolar contínuo de um dado não gera eventos. Sons de rolagem exigem refinar isso, provavelmente com os eventos de força de contato do Rapier.
+- No modo biblioteca do Vite, assets importados são embutidos em base64. Os sons não devem ser importados pelo código: vão como arquivos separados, carregados de uma URL base configurável, com síntese procedural como padrão sem arquivos.
+- Fontes de som já verificadas: Kenney "Impact Sounds" e "Casino Audio" (CC0) e Freesound com filtro CC0. Proibido: Sonniss GDC.
+- `src/audio/` está vazio e só pode importar de `core`.
+- O material de cada dado vem do tema (Etapa 5), pelo campo `soundProfile`.
+
 ## Etapa 7 — Efeitos visuais
 
-Partículas, brilhos, rastros, auras e destaques, acionados por eventos configuráveis.
+Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 9 (efeitos especiais) e 13 (painel de efeitos).
 
-Critérios de aceite:
+**O que construir:**
+
+- Camada independente de efeitos: partículas, brilhos, rastros, auras, explosões visuais, efeitos elementais, destaque de dados específicos e animações para críticos e falhas.
+- Disparo por eventos configuráveis, nunca por regra fixa de RPG: a aplicação decide que um resultado merece um efeito. Dois caminhos previstos: gatilhos declarados no pedido de rolagem e chamada direta (`engine.effects.trigger`).
+- Níveis `off`, `reduced` e `full` (`engine.effects.setLevel` e opção `effects` de `DiceEngine.create`), para acessibilidade e desempenho.
+- Painel de efeitos no playground.
+
+**Critérios de aceite:**
 
 - Disparo por evento e por chamada.
 - No nível `off`, nenhum objeto de efeito é criado na cena.
 - Nível `reduced` respeitado, inclusive por `prefers-reduced-motion`.
 - Descarte de recursos verificado.
 
+**O que já existe e condiciona a etapa:**
+
+- `src/effects/` está vazio e pode importar de `core` e de `three`.
+- `engine.getDiceOnTable()` devolve a posição e a orientação reais de cada dado, e os eventos `diceSettled` e `rollCompleted` marcam os instantes naturais para disparar efeitos.
+- O `WebGLRenderer` foi escolhido em parte por manter `ShaderMaterial` e `EffectComposer` disponíveis ([ADR 0005](adr/0005-stack-tecnica.md)).
+- O laço de render só roda enquanto há animação. Efeitos que duram além da rolagem precisam mantê-lo ativo e liberá-lo ao terminar.
+
 ## Etapa 8 — API e integração
 
-Consolidação da fachada, protocolo de mensagens externas e simulador de eventos no playground.
+Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 11 (API pública), 12 (multiplayer) e 13 (painel de integração).
 
-Critérios de aceite:
+**O que construir:**
+
+- Consolidação da fachada: revisar nomes e contratos, `engine.getState()` e `engine.getStats()`.
+- Contratos para receber eventos de um servidor externo (`engine.remote.receive`). A proposta de `RollEnvelope` está em [API.md](API.md): identificadores de rolagem, jogador e sala, sequência, versão de protocolo e visibilidade.
+- Tratamento de mensagens duplicadas, fora de ordem e de cancelamentos obsoletos.
+- Simulador de eventos externos no playground (painel de integração). **Não** construir um backend.
+- Exemplos mínimos de integração em JavaScript e em TypeScript, validados por teste.
+
+**Critérios de aceite:**
 
 - Testes de mensagem duplicada, fora de ordem e cancelamento obsoleto.
 - Exemplos mínimos em JavaScript e TypeScript funcionando.
@@ -153,15 +259,65 @@ Critérios de aceite:
 - Teste de consumo da biblioteca em um projeto mínimo externo.
 - `API.md` e `INTEGRATION_GUIDE.md` completos.
 
+**Decisões que cabem ao responsável pelo projeto, ainda em aberto:**
+
+- Rolagens simultâneas: fila ou sobreposição. Hoje uma rolagem nova cancela a anterior.
+- Significado final de `visibility` (`public`, `private`, `blind`). Hoje o campo é aceito e não tem efeito.
+- Trajetórias iguais entre clientes por semente compartilhada. Exige calcular as condições iniciais de forma independente de plataforma ([ADR 0006](adr/0006-rapier-deterministico.md)).
+
+**O que já existe e condiciona a etapa:**
+
+- O motor não é a autoridade dos resultados: recebe os valores e garante que a animação os exiba. A sincronização obrigatória é de resultados e estados, não de trajetórias.
+- O Rapier é carregado por `import()` dinâmico e pesa alguns MB: o teste de consumo externo precisa conferir que o bundler do consumidor lida com isso.
+
 ## Etapa 9 — Otimização e validação
 
-Benchmarks reais, qualidade adaptativa e perda de contexto gráfico.
+Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e estabilidade), 15 (qualidade e testes) e 13 (painéis de física e de desempenho).
 
-Critérios de aceite:
+**O que construir:**
+
+- Benchmarks reais em mais de uma máquina e definição dos limites aceitáveis a partir deles.
+- Qualidade adaptativa: redução de efeitos e de custo de GPU conforme a configuração; controle de taxa de quadros quando necessário.
+- Tratamento de perda e restauração do contexto gráfico.
+- Verificação de memória e de descarte de recursos em uso prolongado.
+- Painel de desempenho no playground (FPS, tempo de simulação, quantidade de dados), só com valores medidos.
+- Painel de física no playground, para ajustar parâmetros e observar o efeito. A alocação deste painel nesta etapa é uma proposta; ele pode ser antecipado.
+
+**Critérios de aceite:**
 
 - `docs/BENCHMARKS.md` com o hardware identificado; limites definidos a partir das medições.
 - Teste de perda e restauração de contexto.
 - Sem crescimento de memória em 200 rolagens seguidas.
+
+**O que já existe e condiciona a etapa:**
+
+- Decisão em aberto: pré-simulação na thread principal ou em Web Worker. A interface de física já é assíncrona para permitir a troca. Em uso normal a pré-simulação leva menos de 10 ms; em casos densos passa de 400 ms, que é o argumento a favor do Worker.
+- O limite de 30 dados por rolagem (`MAX_DICE_PER_ROLL`) é provisório e sai destas medições.
+- O renderer não emite eventos de perda de contexto: é preciso ouvir `webglcontextlost` e `webglcontextrestored` no canvas e reconstruir os recursos de GPU.
+
+## Painéis do playground
+
+| Painel         | Etapa | Situação                                                             |
+| -------------- | ----- | -------------------------------------------------------------------- |
+| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.         |
+| Personalização | 5     | —                                                                    |
+| Áudio          | 6     | —                                                                    |
+| Efeitos        | 7     | —                                                                    |
+| Integração     | 8     | —                                                                    |
+| Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados. |
+| Física         | 9     | —                                                                    |
+
+## Pendências conhecidas
+
+Itens observados no caminho que não pertencem a uma etapa específica ou que precisam ser lembrados:
+
+- **Sem integração contínua.** Os testes rodam só localmente. Um workflow no GitHub que rode tipos, lint e testes a cada push não está no plano e depende de decisão.
+- **Campos aceitos e ainda sem efeito:** `theme` em `DieSpec` (Etapa 5) e `visibility` em `metadata` (Etapa 8).
+- **Capacidade.** Em densidades extremas, abaixo de cerca de 3 unidades² por dado, ainda há falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md)).
+- **Lançamento dirigido visível** em dados sem simetria com faces raras ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
+- **Custo do aquecimento** da física na criação do motor não foi medido separadamente.
+- **Um corte de dados nas bordas** foi visto uma vez durante o desenvolvimento, enquanto o servidor de desenvolvimento recarregava dependências, e não foi reproduzido. Uma corrida possível (redimensionar o elemento e rolar no mesmo instante) foi fechada; a causa não foi confirmada.
+- **Medições em uma única máquina.** Todos os números de `BENCHMARKS.md` vêm do mesmo computador.
 
 ## Decisões pendentes
 
