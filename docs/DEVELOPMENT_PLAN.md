@@ -8,8 +8,8 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | 2     | Primeiro d6 funcional  | ✅ Concluída         |
 | 3     | Dados poliédricos      | ✅ Concluída         |
 | 4     | Resultados controlados | ✅ Concluída         |
-| 5     | Materiais e temas      | Aguardando aprovação |
-| 6     | Sonorização            | —                    |
+| 5     | Materiais e temas      | ✅ Concluída         |
+| 6     | Sonorização            | Aguardando aprovação |
 | 7     | Efeitos visuais        | —                    |
 | 8     | API e integração       | —                    |
 | 9     | Otimização e validação | —                    |
@@ -18,7 +18,7 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 
 Este documento basta para continuar o projeto em uma sessão nova, sem depender de conversas anteriores.
 
-**Onde estamos.** Etapas 1 a 4 concluídas (versão 0.4.0). A próxima é a **Etapa 5 — Materiais e temas**, que ainda não foi iniciada e depende de aprovação e de três decisões listadas na própria etapa.
+**Onde estamos.** Etapas 1 a 5 concluídas (versão 0.5.0). A próxima é a **Etapa 6 — Sonorização**, que ainda não foi iniciada e depende de aprovação.
 
 **O que ler, nesta ordem:**
 
@@ -144,48 +144,42 @@ Descobertas desta etapa:
 - **A primeira rolagem da página era até dez vezes mais lenta.** Com busca, chegou a 552 ms no navegador. O motor agora aquece a física ao ser criado, e a mesma rolagem leva 69 ms.
 - **O lançamento dirigido é visível.** No tijolo de exemplo ele aparece em um terço das rolagens autônomas. É a principal ressalva para quem criar dados sem simetria.
 
-## Etapa 5 — Materiais e temas (próxima)
+## Etapa 5 — Materiais e temas ✅
 
-Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 7 (personalização visual), 10 (Esperança e Medo distinguíveis) e 13 (painel de personalização).
+Seis materiais, tema serializável e versionado, `presentation` e `quality`, e o painel de personalização. Decisões em [ADR 0009](adr/0009-temas-e-materiais.md).
 
-**O que construir:**
+| Critério de aceite                          | Evidência                                                                                                                                                                                                                                                   |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Serialização de ida e volta sem perda       | `tests/unit/theme.test.ts`: tema completo e mínimo de cada material; `parseTheme(serializeTheme(t))` igual a `t`, JSON estável e opcionais ausentes preservados.                                                                                            |
+| Tema inválido rejeitado com erro claro      | Mesmo arquivo: tabela de casos inválidos, cada um com a mensagem e o `details.path` esperados (`INVALID_THEME`). No navegador, `tests/e2e/themes.spec.ts` mostra a mensagem no painel.                                                                      |
+| Migração de versão testada                  | Mesmo arquivo: cadeia sintética v1 → v2 → v3 (renomear um campo, mover outro para `colors`), início a partir da versão do tema, versão mais nova recusada, passo ausente recusado e migração que não sobe a versão recusada.                                |
+| Capturas visuais de referência por material | `tests/visual/materials.spec.ts`: 10 capturas (os sete temas no overlay em qualidade média, vidro e cristal na bandeja em qualidade alta, Esperança e Medo lado a lado), estáveis em duas execuções seguidas.                                               |
+| Alterar o tema não altera nenhum resultado  | `tests/integration/themes.test.ts`: o mesmo pedido, sem tema e com os seis materiais, dá os mesmos valores e faces nos modos controlado e autônomo, com trajetórias diferentes. `tests/e2e/themes.spec.ts` confere o mesmo pela orientação real das malhas. |
 
-- Seis materiais: plástico, madeira, pedra, metal, vidro e cristal, com aparência distinta e parâmetros físicos coerentes quando aplicável.
-- Tema serializável e versionado, cobrindo: cor principal, cor secundária, cor dos números, tipografia, textura, material, transparência, rugosidade, metalicidade, emissão, formato geométrico e efeitos associados. A proposta de `ThemeConfig`, `parseTheme` e `serializeTheme` está em [API.md](API.md), na seção "Proposto".
-- Registro e uso de temas: `engine.registerTheme`, `engine.setDefaultTheme` e o campo `theme` de `DieSpec`, que hoje é aceito e ignorado. Dois d12 com temas diferentes na mesma rolagem precisam ser distinguíveis.
-- Salvar e carregar aparências criadas pelo usuário.
-- Opções `presentation` (`overlay` ou `tray`) e `quality` de `DiceEngine.create`.
-- Painel de personalização no playground.
+Além dos critérios:
 
-**Critérios de aceite:**
+- **Esperança e Medo distinguíveis:** dois d12 com temas diferentes na mesma rolagem (captura `esperanca-medo` e teste de integração das aparências).
+- **Trocar o tema com dados na mesa** redesenha sem mover os dados (integração e navegador).
+- **Tema desconhecido** usa o padrão e avisa uma vez no console.
+- **Salvar e carregar aparências:** o painel salva no navegador, exporta e importa JSON; testado de ponta a ponta com recarga da página.
+- **Inspeção visual** no navegador embutido: os seis materiais, números legíveis, Esperança e Medo, bandeja e edição ao vivo.
 
-- Serialização de ida e volta sem perda.
-- Tema inválido rejeitado com erro claro; migração de versão testada.
-- Capturas visuais de referência por material.
-- Alterar o tema não altera nenhum resultado.
+Mudanças em relação ao plano:
 
-**Decisões que cabem ao responsável pelo projeto, ainda em aberto:**
+- **"Formato geométrico" virou a largura do chanfro (`bevel`).** A forma do dado vem do tipo; mudá-la por tema mudaria a física e a leitura de faces, que não podem depender da aparência.
+- **Campo novo `emissive.target`** (`numbers` ou `body`): sem ele a emissão só podia acender o dado inteiro, e o caso útil (números que brilham, como no Medo) ficava de fora.
+- **Transmissão só na bandeja com qualidade alta**, não em toda qualidade alta. No overlay a passada de transmissão não enxerga a página e deixava o vidro leitoso.
+- **Mapa de ambiente inclinado.** O `RoomEnvironment` tem uma luz de teto que, refletida, apagava os números das faces de cima em cristal e metal.
+- **Migração testada com uma cadeia sintética.** Só existe a versão 1; o teste exercita o mecanismo com migrações de exemplo, e `THEME_MIGRATIONS` continua vazio.
+- **`npm run bench` com `--silent=false`.** Sem a opção, a saída das medições não aparecia no terminal.
 
-| Decisão                     | Situação atual                              | Alternativas                                                                                  |
-| --------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Aparência padrão dos dados  | Vermelho com números claros, provisório.    | Uma identidade visual definida pelo responsável, ou um padrão neutro proposto na etapa.       |
-| Tipografia dos números      | Fonte do sistema, que varia entre máquinas. | Incluir no pacote uma fonte de licença livre (OFL), para a mesma aparência em todo lugar.     |
-| Texturas de madeira e pedra | Não existem.                                | Geradas por código, sem arquivos (mais simples), ou texturas CC0 em arquivo (mais realistas). |
+Descobertas desta etapa:
 
-**O que já existe e condiciona a etapa:**
+- **O atrito pesa na convergência.** Com 20 d20, a madeira com atrito × 1,3 precisava de empurrão corretivo em 41% das rolagens, contra 22% do plástico; o valor foi reduzido para × 1,15 (30%). Zero falhas em 7.200 rolagens com os seis materiais; números em [BENCHMARKS.md](BENCHMARKS.md#por-material-etapa-5).
+- **O aviso do three 0.187** sobre `PCFSoftShadowMap` (removido): o padrão `PCFShadowMap` é usado.
+- **O vidro precisa de fundo.** Na bandeja, vidro e cristal com transmissão mostram o feltro escuro e ficam escuros; a opacidade do tema passou a pesar só metade na transmissão, e a absorção foi suavizada. Continua mais sóbrio que no overlay.
 
-- `src/customization/` está vazio e só pode importar de `core`. O renderer pode importar de `core` e de `customization`. As fronteiras são impostas por lint e têm teste.
-- A aparência atual é fixa: `DEFAULT_LABEL_STYLE` em `src/renderer/dice-renderer.ts`.
-- O renderer cria geometria, textura e material uma vez por **tipo** de dado (`resourcesFor`). Com temas, a chave precisa incluir o tema, e os recursos precisam ser descartados quando deixarem de ser usados.
-- O atlas de rótulos (`src/renderer/label-atlas.ts`) pinta uma célula por face e reserva uma célula livre, de cor uniforme, para o chanfro. Texturas com padrão exigem rever o mapeamento do chanfro.
-- A iluminação é uma luz ambiente e uma direcional, sem mapa de ambiente. Metal, vidro e cristal precisam de reflexos: `RoomEnvironment` com `PMREMGenerator` funciona sem rede.
-- Transmissão (vidro e cristal) custa uma passada extra de render. O previsto é usá-la só no nível de qualidade alto e recorrer a mistura alfa nos demais.
-- `tests/visual/` já está no `testMatch` do Playwright, sem testes. As capturas de referência são por sistema operacional e, com WebGL por software, não representam uma GPU real.
-- Parâmetros físicos por material (atrito, restituição) entram por `PhysicsConfig`, que hoje é único para a rolagem inteira.
-- `soundProfile` do tema fica apenas reservado: o áudio é a Etapa 6.
-- Validadores escritos à mão, sem dependência nova, como em `src/core/validate-die.ts`.
-
-## Etapa 6 — Sonorização
+## Etapa 6 — Sonorização (próxima)
 
 Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 8 (sistema de áudio) e 13 (painel de áudio).
 
@@ -212,7 +206,7 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 8 (sistema de áudio)
 - No modo biblioteca do Vite, assets importados são embutidos em base64. Os sons não devem ser importados pelo código: vão como arquivos separados, carregados de uma URL base configurável, com síntese procedural como padrão sem arquivos.
 - Fontes de som já verificadas: Kenney "Impact Sounds" e "Casino Audio" (CC0) e Freesound com filtro CC0. Proibido: Sonniss GDC.
 - `src/audio/` está vazio e só pode importar de `core`.
-- O material de cada dado vem do tema (Etapa 5), pelo campo `soundProfile`.
+- O material de cada dado vem do tema (Etapa 5). `MATERIAL_PRESETS[material].soundProfile` já existe (`plastic`, `wood`, `stone`, `metal`, `glass`, `crystal`), e `ThemeConfig.soundProfile` é aceito e preservado, sem efeito. A física já recebe o material de cada dado (`SimulationDie.material`); o som pode seguir o mesmo caminho.
 
 ## Etapa 7 — Efeitos visuais
 
@@ -300,7 +294,7 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e esta
 | Painel         | Etapa | Situação                                                             |
 | -------------- | ----- | -------------------------------------------------------------------- |
 | Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.         |
-| Personalização | 5     | —                                                                    |
+| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.    |
 | Áudio          | 6     | —                                                                    |
 | Efeitos        | 7     | —                                                                    |
 | Integração     | 8     | —                                                                    |
@@ -312,7 +306,9 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e esta
 Itens observados no caminho que não pertencem a uma etapa específica ou que precisam ser lembrados:
 
 - **Sem integração contínua.** Os testes rodam só localmente. Um workflow no GitHub que rode tipos, lint e testes a cada push não está no plano e depende de decisão.
-- **Campos aceitos e ainda sem efeito:** `theme` em `DieSpec` (Etapa 5) e `visibility` em `metadata` (Etapa 8).
+- **Campos aceitos e ainda sem efeito:** `visibility` em `metadata` (Etapa 8); `soundProfile` (Etapa 6) e `effects` (Etapa 7) nos temas.
+- **Capturas visuais por sistema operacional.** Só há referências para Windows, geradas com WebGL por software. Em outro sistema, a primeira execução de `tests/visual` precisa de `--update-snapshots` e de conferência das imagens.
+- **Vidro e cristal na bandeja** ficam escuros sobre o feltro escuro: a transmissão mostra o que está atrás ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - **Capacidade.** Em densidades extremas, abaixo de cerca de 3 unidades² por dado, ainda há falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md)).
 - **Lançamento dirigido visível** em dados sem simetria com faces raras ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 - **Custo do aquecimento** da física na criação do motor não foi medido separadamente.
@@ -330,6 +326,7 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 
 Decididas:
 
+- Temas e materiais: aparência padrão marfim, fonte OFL incluída, texturas procedurais, efeito físico moderado e tema desconhecido com o padrão ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - Recuperação por empurrão dentro da simulação e lançamento dirigido para dados sem simetria ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 - Build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)).
 - A face `0` do d10 rolado sozinho vale **10** (2026-11-24). A face continua mostrando "0"; o valor registrado é 10.

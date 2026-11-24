@@ -4,7 +4,7 @@ A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto
 
 Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
 
-## Disponível hoje (0.4.0)
+## Disponível hoje (0.5.0)
 
 Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
@@ -18,10 +18,13 @@ const engine = await DiceEngine.create(container, {
   maxPixelRatio: 2, // teto de densidade de pixels do canvas
   physics: {}, // Partial<PhysicsConfig>
   rng: createCryptoRandomSource(), // fonte dos valores no modo autônomo
+  presentation: 'overlay', // | 'tray'
+  quality: 'auto', // | 'low' | 'medium' | 'high'
+  theme: meuTema, // ThemeConfig opcional; vira o tema padrão
 });
 ```
 
-`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL.
+`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL e com `INVALID_THEME` se `theme` for inválido. `presentation`, `quality` e `theme` estão descritos em [Aparência](#aparência) e [Temas](#temas).
 
 | Método                         | Efeito                                                                                        |
 | ------------------------------ | --------------------------------------------------------------------------------------------- |
@@ -31,6 +34,10 @@ const engine = await DiceEngine.create(container, {
 | `on(evento, ouvinte)`          | Registra um ouvinte; devolve a função que o remove.                                           |
 | `registerDie(definition)`      | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                |
 | `getDiceOnTable(): TableDie[]` | Dados físicos na mesa, com a posição e a orientação reais das malhas.                         |
+| `registerTheme(theme)`         | Registra ou substitui um tema. Lança `DiceError` `INVALID_THEME` se for inválido.             |
+| `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.              |
+| `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                  |
+| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.           |
 | `destroy(): void`              | Cancela, libera GPU e remove o canvas. A instância não pode ser reutilizada.                  |
 
 ```ts
@@ -61,7 +68,7 @@ interface DieSpec {
   values?: readonly number[]; // modo controlado: um valor por dado
   ids?: readonly string[]; // gerados como `<rollId>:<índice>` quando omitidos
   role?: string; // etiqueta livre, devolvida nos resultados
-  theme?: string; // reservado; sem efeito até a Etapa 5
+  theme?: string; // id de um tema registrado; ver "Temas"
 }
 
 interface RollRequest {
@@ -227,6 +234,7 @@ import { DiceError, isDiceError } from '3dados';
 | `INVALID_REQUEST`         | Pedido de rolagem malformado.                         |
 | `UNKNOWN_DIE_TYPE`        | Tipo de dado não registrado.                          |
 | `INVALID_DIE_DEFINITION`  | Definição de dado personalizado inválida.             |
+| `INVALID_THEME`           | Tema inválido ou de versão não suportada.             |
 | `SIMULATION_FAILED`       | A simulação não convergiu no orçamento de tentativas. |
 | `RESULT_MISMATCH`         | O valor exibido divergiu do oficial.                  |
 | `UNSUPPORTED_ENVIRONMENT` | Recurso de plataforma indisponível.                   |
@@ -278,6 +286,114 @@ const dice = engine.getDiceOnTable();
 
 Devolve o estado das malhas no instante da chamada, inclusive durante a animação. Serve para posicionar elementos da aplicação junto aos dados e para conferir, de fora, o que está sendo exibido. As unidades são as do motor: 1 unidade é a aresta de um d6.
 
+### Aparência
+
+`presentation` e `quality` são opções de criação. Para mudá-las, crie outro motor.
+
+| `presentation`     | Efeito                                                                                 |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `overlay` (padrão) | Canvas transparente sobre a aplicação: só os dados e as sombras aparecem.              |
+| `tray`             | Bandeja visível, com fundo de feltro e bordas. A área de rolagem é a mesma do overlay. |
+
+| `quality` | Sombras | Densidade de pixels | Antisserrilhado | Transmissão em vidro e cristal |
+| --------- | ------- | ------------------- | --------------- | ------------------------------ |
+| `low`     | não     | até 1               | não             | não                            |
+| `medium`  | 1024 px | até 1,5             | sim             | não                            |
+| `high`    | 2048 px | até `maxPixelRatio` | sim             | só com `presentation: 'tray'`  |
+
+`auto` (padrão) escolhe `high`, ou `low` quando o WebGL roda por software (SwiftShader, llvmpipe e afins, detectados por `WEBGL_debug_renderer_info`). `engine.quality` informa a escolha.
+
+Sem transmissão, vidro e cristal são desenhados com transparência comum. No overlay a transmissão nunca é usada: o canvas não enxerga a página por baixo, e o vidro ficaria leitoso em vez de deixar a aplicação aparecer.
+
+### Temas
+
+```ts
+import type { ThemeConfig } from '3dados';
+
+const esperanca: ThemeConfig = {
+  schemaVersion: 1,
+  id: 'esperanca',
+  name: 'Esperança',
+  material: 'metal',
+  colors: { primary: '#e6bd4f', secondary: '#a8842c', numbers: '#2a1d04' },
+  roughness: 0.35,
+};
+const medo: ThemeConfig = {
+  schemaVersion: 1,
+  id: 'medo',
+  name: 'Medo',
+  material: 'crystal',
+  colors: { primary: '#3a1d5c', secondary: '#1f0f33', numbers: '#f2e6ff' },
+  opacity: 0.6,
+  emissive: { color: '#b98cff', intensity: 1.4, target: 'numbers' },
+};
+engine.registerTheme(esperanca);
+engine.registerTheme(medo);
+
+engine.roll({
+  dice: [
+    { type: 'd12', theme: 'esperanca', role: 'hope' },
+    { type: 'd12', theme: 'medo', role: 'fear' },
+  ],
+});
+```
+
+```ts
+interface ThemeConfig {
+  schemaVersion: 1;
+  id: string; // letras, dígitos, ".", "_" e "-"; até 64 caracteres
+  name: string; // até 80 caracteres
+  material: 'plastic' | 'wood' | 'stone' | 'metal' | 'glass' | 'crystal';
+  colors: { primary: string; secondary: string; numbers: string }; // "#rrggbb"
+  font?: string; // família CSS dos números; padrão: a fonte incluída
+  texture?: 'none' | 'speckle' | 'marble' | 'wood-grain' | 'stone';
+  opacity?: number; // 0–1
+  roughness?: number; // 0–1
+  metalness?: number; // 0–1
+  emissive?: { color: string; intensity: number; target?: 'numbers' | 'body' }; // intensidade 0–4
+  bevel?: number; // largura do chanfro das arestas, 0–0,12; só visual
+  effects?: string[]; // reservado para a Etapa 7; preservado, sem efeito
+  soundProfile?: string; // reservado para a Etapa 6; preservado, sem efeito
+}
+```
+
+- **Campo opcional ausente usa o padrão do material.** Um tema mínimo tem só `schemaVersion`, `id`, `name`, `material` e `colors`.
+- `colors.primary` é o corpo e `colors.numbers`, os números. `colors.secondary` colore o padrão da textura; com `texture: 'none'`, colore as arestas chanfradas.
+- `emissive.target` (padrão `numbers`) diz o que brilha: os números ou o corpo.
+- `font` precisa existir na página, por `@font-face` da aplicação ou como fonte do sistema. O motor espera a fonte carregar antes de desenhar e, se ela não existir, usa a fonte incluída: Atkinson Hyperlegible Next (OFL), embutida no pacote.
+- `bevel` é limitado pela geometria de cada dado: no máximo 40% do raio inscrito da menor face.
+
+**Tema padrão.** Sem `options.theme`, vale `DEFAULT_THEME` (id `default`): plástico marfim (`#efe9dc`) com números grafite (`#24272d`). `options.theme` e `setDefaultTheme(id)` trocam o padrão, que é o tema de todo `DieSpec` sem `theme`.
+
+**Tema não registrado.** Um `DieSpec.theme` desconhecido não falha a rolagem: o dado usa o tema padrão e o motor avisa uma vez no console (`[3dados] Tema "x" não registrado; usando o tema padrão "default".`).
+
+**Troca na mesa.** `registerTheme` com um `id` já registrado substitui o tema e redesenha os dados que estão na mesa, sem movê-los. `setDefaultTheme` faz o mesmo.
+
+**O tema nunca muda o resultado.** Os valores são decididos antes de o tema ser consultado, e o tema não consome o RNG. O material muda a física (atrito, quique e densidade) e, portanto, a **trajetória**; o valor exibido continua sendo o oficial.
+
+| Material  | Aparência padrão                                         | Atrito | Quique | Densidade |
+| --------- | -------------------------------------------------------- | ------ | ------ | --------- |
+| `plastic` | Liso, com verniz leve                                    | × 1    | × 1    | 1         |
+| `wood`    | Veios, fosco                                             | × 1,15 | × 0,85 | 0,6       |
+| `stone`   | Granulado, muito fosco                                   | × 1,1  | × 0,75 | 2,2       |
+| `metal`   | Metálico e polido                                        | × 0,8  | × 0,7  | 3,5       |
+| `glass`   | Translúcido (opacidade 0,35), refração 1,5               | × 0,7  | × 1,1  | 2,1       |
+| `crystal` | Translúcido (0,3), refração 2,0, dispersão, iridescência | × 0,7  | × 1,1  | 2,2       |
+
+Atrito e quique multiplicam `PhysicsConfig.friction` e `restitution`; o quique fica limitado a 0,95. `MATERIAL_PRESETS` expõe os valores.
+
+**Validação e versões.** `parseTheme(input)` aceita um objeto ou uma string JSON, migra versões antigas, valida e devolve uma cópia normalizada (cores em minúsculas, campos em ordem fixa). `serializeTheme(theme)` devolve o JSON correspondente, indentado com 2 espaços. `parseTheme(serializeTheme(t))` é igual a `parseTheme(t)`.
+
+Um tema inválido lança `DiceError` `INVALID_THEME`, com o campo na mensagem e `details: { path, received }`:
+
+```text
+Tema inválido: colors.primary: esperada uma cor no formato "#rrggbb".
+```
+
+São recusados campos desconhecidos (inclusive dentro de `colors` e `emissive`), valores fora dos limites e `schemaVersion` ausente ou mais nova que `THEME_SCHEMA_VERSION`. Uma versão antiga passa pelas migrações, em ordem, até a atual.
+
+Exportados: `DEFAULT_THEME`, `MATERIAL_PRESETS`, `MATERIALS`, `TEXTURES`, `THEME_SCHEMA_VERSION`, `parseTheme`, `serializeTheme` e os tipos `ThemeConfig`, `ThemeColors`, `ThemeEmissive`, `EmissiveTarget`, `MaterialKind`, `TextureKind`, `MaterialPreset`, `MaterialAppearance`, `MaterialPhysics`, `Presentation`, `QualitySetting` e `RenderQuality`.
+
 ### Fontes de aleatoriedade
 
 ```ts
@@ -294,22 +410,17 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.4.0'
+import { VERSION } from '3dados'; // '0.5.0'
 ```
 
 ## Proposto (ainda não implementado)
 
 ```ts
 const engine = await DiceEngine.create(container, {
-  presentation: 'overlay', // | 'tray'
-  quality: 'auto', // | 'low' | 'medium' | 'high'
-  theme: defaultTheme,
   audio: { enabled: true, volume: 0.8 },
   effects: { level: 'full' }, // | 'reduced' | 'off'
 });
 
-engine.registerTheme(theme);
-engine.setDefaultTheme(id);
 engine.audio.setEnabled(false);
 engine.audio.setVolume(0.5);
 engine.audio.unlock();
@@ -322,32 +433,9 @@ engine.getStats();
 
 | Funcionalidade                                         | Etapa |
 | ------------------------------------------------------ | ----- |
-| Temas, `presentation`, `quality`                       | 5     |
 | `audio`                                                | 6     |
 | `effects`                                              | 7     |
 | `remote`, `getState`, `getStats`, rolagens simultâneas | 8     |
-
-### Temas
-
-```ts
-interface ThemeConfig {
-  schemaVersion: 1;
-  id: string;
-  name: string;
-  material: 'plastic' | 'wood' | 'stone' | 'metal' | 'glass' | 'crystal';
-  colors: { primary: string; secondary: string; numbers: string };
-  font?: string;
-  texture?: string;
-  opacity?: number;
-  roughness?: number;
-  metalness?: number;
-  emissive?: { color: string; intensity: number };
-  effects?: string[];
-  soundProfile?: string;
-}
-```
-
-JSON puro. `parseTheme()` valida e migra versões antigas; `serializeTheme()` faz o caminho inverso.
 
 ### Mensagens externas (multiplayer)
 

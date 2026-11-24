@@ -2,7 +2,7 @@
 
 Este documento registra medições reais, sempre com o hardware identificado. **Ainda não define metas nem limites aceitáveis**: isso é trabalho da Etapa 9, depois de medir em mais de uma máquina.
 
-Para repetir: `npm run bench` (variáveis `BENCH_RUNS`, `BENCH_COUNTS`, `BENCH_AREA`, `BENCH_CONFIG`; ver `tests/bench/presim-stats.test.ts`).
+Para repetir: `npm run bench` (variáveis `BENCH_RUNS`, `BENCH_COUNTS`, `BENCH_AREA`, `BENCH_TYPES`, `BENCH_MATERIALS`, `BENCH_CONFIG`; ver `tests/bench/presim-stats.test.ts`).
 
 ## Ambiente das medições da Etapa 2 (2026-11-24)
 
@@ -123,6 +123,33 @@ Navegador embutido, mesma máquina. A primeira execução do WASM e do código d
 ¹ Medido na Etapa 2, com 2 tentativas.
 
 Rolagens seguintes da mesma página, no caso dos tijolos: 35 a 57 ms. O custo do aquecimento foi transferido para a criação do motor e não foi medido separadamente.
+
+## Por material (Etapa 5)
+
+Mesma máquina das demais medições (ver "Ambiente"). Node, área 26×15, configuração padrão, 200 rolagens por caso, com os parâmetros físicos de cada material (`MATERIAL_PRESETS`). Comando:
+
+```sh
+BENCH_COUNTS=1,5,20 BENCH_TYPES=d6,d20 BENCH_MATERIALS=plastic,wood,stone,metal,glass,crystal npm run bench
+```
+
+**Zero falhas nos 36 casos (7.200 rolagens).** Com 1 e 5 dados, nenhum material precisou de empurrão corretivo. Com 20 d6, no máximo 1% das rolagens. A diferença aparece com 20 d20:
+
+| Material | Atrito | Quique | Densidade | Tentativas (média) | Rolagens com recuperação | CPU mediana | CPU p95 | Duração mediana | Duração p95 |
+| -------- | ------ | ------ | --------- | ------------------ | ------------------------ | ----------- | ------- | --------------- | ----------- |
+| plástico | × 1    | × 1    | 1         | 1,94               | 22%                      | 32,9 ms     | 66,8 ms | 1,39 s          | 2,09 s      |
+| madeira  | × 1,15 | × 0,85 | 0,6       | 2,13               | 30%                      | 42,1 ms     | 74,3 ms | 1,44 s          | 2,55 s      |
+| pedra    | × 1,1  | × 0,75 | 2,2       | 2,23               | 37%                      | 52,0 ms     | 95,4 ms | 1,46 s          | 2,74 s      |
+| metal    | × 0,8  | × 0,7  | 3,5       | 1,89               | 21%                      | 29,0 ms     | 69,9 ms | 1,32 s          | 2,06 s      |
+| vidro    | × 0,7  | × 1,1  | 2,1       | 1,77               | 10%                      | 24,4 ms     | 56,7 ms | 1,32 s          | 1,77 s      |
+| cristal  | × 0,7  | × 1,1  | 2,2       | 1,81               | 15%                      | 23,3 ms     | 55,7 ms | 1,35 s          | 2,06 s      |
+
+Leituras:
+
+- **Mais atrito, mais dados apoiados.** Madeira e pedra seguram os dados inclinados ou uns sobre os outros com mais frequência, e a recuperação entra mais vezes. Com atrito × 1,3, a madeira chegava a 41% de rolagens com recuperação; por isso o valor foi reduzido para × 1,15.
+- **A pedra varia mais do que o atrito explica.** Com atrito × 1,2 ela teve 34%; com × 1,1, 37%. O quique baixo (× 0,75) e a amostra de 200 rolagens pesam tanto quanto o atrito. A diferença entre materiais é real; a ordem entre madeira e pedra não é conclusiva.
+- **Vidro e cristal**, com atrito baixo e mais quique, convergem melhor que o plástico.
+- A duração p95 da pedra (2,74 s) é a maior: dados empurrados voltam a rolar.
+- Os tempos de CPU variam cerca de duas vezes entre execuções, como nas demais medições; valem as ordens de grandeza.
 
 ## Convergência por quantidade de dados e área (antes da recuperação)
 

@@ -34,12 +34,151 @@
               e a quantidade é ignorada. <strong>dF</strong> e <strong>tijolo</strong> são dados
               personalizados registrados pelo playground; no tijolo, 1 e 6 são as pontas.
             </p>
+            <label>
+              Tema dos dados
+              <select data-testid="roll-theme" id="roll-theme"></select>
+            </label>
             <div class="buttons">
               <button data-testid="roll-button" type="submit" class="primary">Rolar</button>
               <button data-testid="cancel-button" type="button" id="cancel">Cancelar</button>
               <button data-testid="clear-button" type="button" id="clear">Limpar</button>
             </div>
+            <button data-testid="duality-button" type="button" id="duality">
+              Daggerheart: Esperança e Medo (2d12)
+            </button>
+            <p class="hint">
+              Os dois d12 usam os temas <code>esperanca</code> e <code>medo</code>, com
+              <code>role</code> <code>hope</code> e <code>fear</code>. O motor não interpreta o
+              resultado.
+            </p>
           </form>
+        </section>
+
+        <section class="panel" aria-labelledby="theme-title">
+          <h2 id="theme-title">Personalização</h2>
+          <form class="form" data-testid="theme-form">
+            <label>
+              Tema
+              <select data-testid="theme-select"></select>
+            </label>
+            <div class="pair">
+              <label>
+                Identificador
+                <input data-testid="theme-id" autocomplete="off" />
+              </label>
+              <label>
+                Nome
+                <input data-testid="theme-name" autocomplete="off" />
+              </label>
+            </div>
+            <label>
+              Material
+              <select data-testid="theme-material"></select>
+            </label>
+            <div class="colors">
+              <label>
+                Principal
+                <input type="color" data-testid="theme-primary" />
+              </label>
+              <label>
+                Secundária
+                <input type="color" data-testid="theme-secondary" />
+              </label>
+              <label>
+                Números
+                <input type="color" data-testid="theme-numbers" />
+              </label>
+            </div>
+            <label>
+              Tipografia
+              <select data-testid="theme-font"></select>
+            </label>
+            <label>
+              Textura
+              <select data-testid="theme-texture"></select>
+            </label>
+            <div class="numeric" data-testid="theme-numeric"></div>
+            <fieldset class="emissive">
+              <legend>
+                <label class="inline">
+                  <input type="checkbox" data-testid="theme-emissive-on" />
+                  Emissão
+                </label>
+              </legend>
+              <div class="emissive-row">
+                <label>
+                  Cor
+                  <input type="color" data-testid="theme-emissive-color" />
+                </label>
+                <label>
+                  Intensidade
+                  <input
+                    type="range"
+                    min="0"
+                    max="4"
+                    step="0.1"
+                    data-testid="theme-emissive-intensity"
+                  />
+                </label>
+                <label>
+                  Onde
+                  <select data-testid="theme-emissive-target">
+                    <option value="numbers">Números</option>
+                    <option value="body">Corpo</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+            <p class="hint">
+              Sem marcar, cada campo usa o padrão do material. A secundária colore o padrão da
+              textura; com textura lisa, colore as arestas.
+            </p>
+            <div class="buttons">
+              <button type="button" data-testid="theme-save">Salvar</button>
+              <button type="button" data-testid="theme-delete">Excluir</button>
+              <button type="button" data-testid="theme-export">Exportar</button>
+            </div>
+            <label>
+              JSON do tema
+              <textarea data-testid="theme-json" rows="8" spellcheck="false"></textarea>
+            </label>
+            <div class="buttons">
+              <button type="button" data-testid="theme-load-json">Carregar JSON</button>
+              <label class="file-button">
+                Importar arquivo
+                <input type="file" accept="application/json,.json" data-testid="theme-import" />
+              </label>
+            </div>
+            <p class="hint" data-testid="theme-status" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="panel" aria-labelledby="display-title">
+          <h2 id="display-title">Exibição</h2>
+          <div class="form">
+            <div class="pair">
+              <label>
+                Apresentação
+                <select data-testid="presentation-select">
+                  <option value="overlay">Overlay transparente</option>
+                  <option value="tray">Bandeja</option>
+                </select>
+              </label>
+              <label>
+                Qualidade
+                <select data-testid="quality-select">
+                  <option value="auto">Automática</option>
+                  <option value="low">Baixa</option>
+                  <option value="medium">Média</option>
+                  <option value="high">Alta</option>
+                </select>
+              </label>
+            </div>
+            <p class="hint">
+              São opções de criação do motor: mudar recarrega a página. Qualidade efetiva:
+              <strong data-testid="quality-effective">—</strong>.
+            </p>
+          </div>
         </section>
 
         <section class="panel" aria-labelledby="result-title">

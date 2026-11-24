@@ -4,9 +4,12 @@ import {
   createDieDefinition,
   isDiceError,
   type DieSpec,
+  type Presentation,
+  type QualitySetting,
   type RollOutcome,
   type RollRequest,
 } from '3dados';
+import { createThemePanel, type ThemePanel } from './theme-panel';
 
 interface Diagnostic {
   id: string;
@@ -153,16 +156,64 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Opções de criação do motor, lidas da URL (`?presentation=tray&quality=low`). */
+function readEngineOptions(): { presentation: Presentation; quality: QualitySetting } {
+  const params = new URLSearchParams(location.search);
+  const presentation = params.get('presentation') === 'tray' ? 'tray' : 'overlay';
+  const quality = params.get('quality');
+  return {
+    presentation,
+    quality: quality === 'low' || quality === 'medium' || quality === 'high' ? quality : 'auto',
+  };
+}
+
+/** Selects de exibição: mudar uma opção de criação recarrega a página com ela na URL. */
+function setupDisplayPanel(options: { presentation: Presentation; quality: QualitySetting }) {
+  const presentation = byTestId<HTMLSelectElement>('presentation-select');
+  const quality = byTestId<HTMLSelectElement>('quality-select');
+  presentation.value = options.presentation;
+  quality.value = options.quality;
+  const reload = () => {
+    const params = new URLSearchParams(location.search);
+    params.set('presentation', presentation.value);
+    params.set('quality', quality.value);
+    location.search = params.toString();
+  };
+  presentation.addEventListener('change', reload);
+  quality.addEventListener('change', reload);
+}
+
+/** Lista os temas no seletor da rolagem, mantendo a escolha atual quando possível. */
+function renderRollThemes(panel: ThemePanel): void {
+  const select = byTestId<HTMLSelectElement>('roll-theme');
+  const current = select.value;
+  const engineDefault = document.createElement('option');
+  engineDefault.value = '';
+  engineDefault.textContent = 'Padrão do motor';
+  select.replaceChildren(
+    engineDefault,
+    ...panel.themes().map((theme) => {
+      const element = document.createElement('option');
+      element.value = theme.id;
+      element.textContent = theme.name;
+      return element;
+    }),
+  );
+  if ([...select.options].some((element) => element.value === current)) select.value = current;
+}
+
 /** Lê o formulário. Um tipo com valores preenchidos é rolado em modo controlado. */
 function readRequest(): RollRequest {
+  const theme = byTestId<HTMLSelectElement>('roll-theme').value || undefined;
   const dice: DieSpec[] = [];
   for (const { type } of DIE_TYPES) {
     const text = byTestId<HTMLInputElement>(`values-${type}`).value.trim();
     const count = Number(byTestId<HTMLInputElement>(`count-${type}`).value);
+    const themed = theme === undefined ? {} : { theme };
     if (text.length > 0) {
-      dice.push({ type, values: text.split(/[\s,;]+/).map(Number) });
+      dice.push({ type, values: text.split(/[\s,;]+/).map(Number), ...themed });
     } else if (count > 0) {
-      dice.push({ type, count });
+      dice.push({ type, count, ...themed });
     }
   }
   return { dice };
@@ -177,7 +228,8 @@ function showOutcome(outcome: RollOutcome): void {
       resultDetail.textContent = outcome.dice
         .map((die) => {
           const parts = die.components?.map((part) => part.faceId).join(' + ');
-          return `${die.type}: ${die.value}${parts ? ` (${parts})` : ''}`;
+          const role = die.role ? `${die.role} ` : '';
+          return `${role}${die.type}: ${die.value}${parts ? ` (${parts})` : ''}`;
         })
         .join(' · ');
       statDuration.textContent = `${outcome.durationMs.toFixed(0)} ms`;
@@ -214,9 +266,12 @@ async function start(): Promise<void> {
   const rows = document.querySelector('#dice-rows');
   if (rows) renderDiceRows(rows);
 
+  const engineOptions = readEngineOptions();
+  setupDisplayPanel(engineOptions);
+
   let engine: DiceEngine;
   try {
-    engine = await DiceEngine.create(byTestId('dice-overlay'));
+    engine = await DiceEngine.create(byTestId('dice-overlay'), engineOptions);
     engine.registerDie(createFudgeDie());
     engine.registerDie(createBrickDie());
   } catch (error) {
@@ -224,6 +279,14 @@ async function start(): Promise<void> {
     rollButton.disabled = true;
     return;
   }
+  byTestId('quality-effective').textContent = engine.quality;
+
+  // O painel avisa quando a lista de temas muda (inclusive ao ser criado).
+  const themes: { panel?: ThemePanel } = {};
+  themes.panel = createThemePanel(engine, () => {
+    if (themes.panel) renderRollThemes(themes.panel);
+  });
+  renderRollThemes(themes.panel);
   setStatus('pronto');
 
   // Acesso para depuração e para os testes de navegador, que leem a orientação
@@ -244,15 +307,26 @@ async function start(): Promise<void> {
     statCollisions.textContent = String(collisions);
   });
 
-  document.querySelector('#roll-form')?.addEventListener('submit', (event) => {
-    event.preventDefault();
+  const startRoll = (request: RollRequest) => {
     collisions = 0;
     resetReadout();
     setStatus('rolando…');
     hooks.lastOutcome = null;
-    void engine.roll(readRequest()).result.then((outcome) => {
+    void engine.roll(request).result.then((outcome) => {
       hooks.lastOutcome = outcome;
       showOutcome(outcome);
+    });
+  };
+  document.querySelector('#roll-form')?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    startRoll(readRequest());
+  });
+  document.querySelector('#duality')?.addEventListener('click', () => {
+    startRoll({
+      dice: [
+        { type: 'd12', theme: 'esperanca', role: 'hope' },
+        { type: 'd12', theme: 'medo', role: 'fear' },
+      ],
     });
   });
   document.querySelector('#cancel')?.addEventListener('click', () => {

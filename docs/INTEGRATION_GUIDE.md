@@ -1,6 +1,6 @@
 # Guia de integração
 
-> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas (Etapa 4). Temas, áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
+> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas e temas com seis materiais (Etapa 5). Áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
 
 ## Papéis
 
@@ -100,6 +100,43 @@ Cada cliente anima a própria trajetória. O que é igual para todos é o result
 
 Em rolagens com muitos dados, alguns podem parar inclinados ou sobre outros. O motor lhes dá um empurrão e eles voltam a rolar até assentar. No resultado, esses dados vêm com `recovered: true`. Não é preciso tratar o campo: o valor é o oficial de qualquer forma. Ele serve para diagnóstico, por exemplo para perceber que a área está pequena para a quantidade de dados.
 
+## Temas
+
+Registre os temas uma vez e peça-os por `id` em cada dado. O formato completo está em [API.md](API.md#temas).
+
+```ts
+import { DiceEngine, parseTheme, serializeTheme } from '3dados';
+
+const engine = await DiceEngine.create(elemento, {
+  // Tema padrão da mesa: vale para dados sem `theme`.
+  theme: {
+    schemaVersion: 1,
+    id: 'mesa',
+    name: 'Mesa',
+    material: 'wood',
+    colors: { primary: '#8a5a32', secondary: '#5e3b1e', numbers: '#f4ead8' },
+  },
+});
+
+// Tema de um jogador, vindo do servidor ou do armazenamento local.
+try {
+  engine.registerTheme(parseTheme(textoSalvo));
+} catch (error) {
+  // DiceError INVALID_THEME: a mensagem diz qual campo está errado.
+}
+
+engine.roll({ dice: [{ type: 'd20', theme: 'tema-da-ana' }] });
+
+// Para salvar: texto JSON estável, que `parseTheme` lê de volta igual.
+localStorage.setItem('tema', serializeTheme(engine.getTheme('tema-da-ana')!));
+```
+
+- Um tema não registrado não falha a rolagem: o dado usa o tema padrão e o motor avisa no console.
+- Registrar de novo um `id` existente redesenha os dados que estão na mesa, sem movê-los.
+- O tema nunca muda o valor. O material muda a física, e portanto a trajetória: em multiplayer, jogadores com temas diferentes veem caminhos diferentes e o mesmo resultado.
+- Fontes de tema (`font`) precisam estar carregadas na página pela aplicação. Sem isso, o motor usa a fonte incluída.
+- Em máquinas sem GPU (WebGL por software), `quality: 'auto'` reduz o custo do render; `engine.quality` informa o nível escolhido.
+
 ## Elementos junto aos dados
 
 `engine.getDiceOnTable()` devolve a posição e a orientação de cada dado na mesa, nas unidades do motor (1 unidade é a aresta de um d6, e a área visível é centrada na origem). Com `diceSizePx` de 72, uma unidade corresponde a cerca de 72 px.
@@ -112,7 +149,7 @@ Em rolagens com muitos dados, alguns podem parar inclinados ou sobre outros. O m
 
 ## Exemplos por sistema
 
-O motor não conhece nenhum sistema. Os exemplos mostram apenas como a aplicação descreve os dados. A distinção visual por `theme` chega na Etapa 5; até lá o campo é aceito e ignorado.
+O motor não conhece nenhum sistema. Os exemplos mostram apenas como a aplicação descreve os dados.
 
 ```ts
 // D&D: vantagem. A aplicação escolhe o maior.
@@ -127,10 +164,13 @@ engine.roll({
 });
 
 // Daggerheart: Esperança e Medo distinguíveis por tema. A aplicação compara os valores.
+// Os temas `esperanca` e `medo` são os do exemplo em API.md ("Temas").
+engine.registerTheme(esperanca);
+engine.registerTheme(medo);
 engine.roll({
   dice: [
-    { type: 'd12', role: 'hope', theme: 'hope' },
-    { type: 'd12', role: 'fear', theme: 'fear' },
+    { type: 'd12', role: 'hope', theme: 'esperanca' },
+    { type: 'd12', role: 'fear', theme: 'medo' },
   ],
 });
 ```
@@ -177,5 +217,5 @@ Navegadores só liberam áudio após um gesto do usuário. Será preciso chamar 
 ## Empacotamento
 
 - A biblioteca é distribuída como ESM, com declarações de tipos.
-- `three` e `@dimforge/rapier3d-deterministic-compat` são dependências resolvidas pelo bundler da aplicação, não embutidas. O Rapier (alguns MB) é carregado por `import()` dinâmico, só quando um motor é criado.
+- `three` e `@dimforge/rapier3d-deterministic-compat` são dependências resolvidas pelo bundler da aplicação, não embutidas. A fonte dos números (Atkinson Hyperlegible Next, OFL) vem embutida no pacote. O Rapier (alguns MB) é carregado por `import()` dinâmico, só quando um motor é criado.
 - Depois que os recursos locais estão disponíveis, nenhuma conexão com a internet é necessária.
