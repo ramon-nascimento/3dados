@@ -358,3 +358,21 @@ label.inline {
 .hint[data-state='bad'] {
   color: var(--bad);
 }
+
+.effect-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.effect-checks {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 8px;
+}
+
+.inline-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

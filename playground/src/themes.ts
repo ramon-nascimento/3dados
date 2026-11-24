@@ -60,6 +60,8 @@ export const EXAMPLE_THEMES: readonly ThemeConfig[] = [
     material: 'metal',
     colors: { primary: '#e6bd4f', secondary: '#a8842c', numbers: '#2a1d04' },
     roughness: 0.35,
+    // Preset registrado pelo playground (effects-panel.ts).
+    effects: ['brilho-esperanca'],
   },
   {
     schemaVersion: 1,
@@ -69,6 +71,7 @@ export const EXAMPLE_THEMES: readonly ThemeConfig[] = [
     colors: { primary: '#3a1d5c', secondary: '#1f0f33', numbers: '#f2e6ff' },
     opacity: 0.6,
     emissive: { color: '#b98cff', intensity: 1.4, target: 'numbers' },
+    effects: ['aura-medo'],
   },
 ];
 

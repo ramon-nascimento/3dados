@@ -20,6 +20,7 @@ import {
   SRGBColorSpace,
   WebGLRenderer,
   type Material,
+  type Object3D,
   type Texture,
   type WebGLRenderTarget,
 } from 'three';
@@ -33,6 +34,12 @@ import { DEFAULT_FONT_FAMILY, DEFAULT_FONT_WOFF2_BASE64 } from './default-font-d
 import { buildDieMeshData, type AtlasLayout } from './die-mesh-data';
 import { invertMask, paintAtlas } from './label-atlas';
 import { generatePatternPixels, hexToRgb } from './patterns';
+
+/**
+ * Objeto que outro módulo coloca na cena (os efeitos). Reexportado para o
+ * `integration`, que não importa o three diretamente.
+ */
+export type SceneObject = Object3D;
 
 /** Nível de qualidade efetivo do render. */
 export type RenderQuality = 'low' | 'medium' | 'high';
@@ -362,6 +369,18 @@ export class DiceRenderer {
   getDiePosition(dieId: DieId): Vec3 {
     const { x, y, z } = this.entryOf(dieId).mesh.position;
     return { x, y, z };
+  }
+
+  /**
+   * Coloca na cena um objeto de outro módulo (o grupo dos efeitos). O dono
+   * continua responsável por liberar seus recursos.
+   */
+  addObject(object: SceneObject): void {
+    this.scene.add(object);
+  }
+
+  removeObject(object: SceneObject): void {
+    this.scene.remove(object);
   }
 
   /** Quantos conjuntos de recursos de GPU existem (em uso e em cache). Para testes. */

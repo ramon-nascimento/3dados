@@ -7,6 +7,7 @@ export * from './dice/d6';
 export * from './dice/platonic';
 export * from './dice/standard';
 export * from './die-definition';
+export * from './effect-trigger';
 export * from './errors';
 export * from './events';
 export * from './face-reading';

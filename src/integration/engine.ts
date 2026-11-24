@@ -51,6 +51,17 @@ import {
   type ResolvedAppearance,
   type ThemeConfig,
 } from '../customization';
+import {
+  DiceEffects,
+  browserEffectsEnvironment,
+  parseEffectsOptions,
+  planEffectTriggers,
+  type DiceEffectsControls,
+  type EffectsEnvironment,
+  type EffectsHost,
+  type EffectsOptions,
+  type PlannedEffect,
+} from '../effects';
 import type { PhysicsConfig } from '../physics/config';
 import {
   createPhysicsSimulator,
@@ -62,6 +73,7 @@ import {
   type Presentation,
   type QualitySetting,
   type RenderQuality,
+  type SceneObject,
 } from '../renderer/dice-renderer';
 
 export interface DiceEngineOptions {
@@ -84,6 +96,11 @@ export interface DiceEngineOptions {
   theme?: ThemeConfig;
   /** Sons. Ligado por padrão; nada toca antes de um gesto do usuário. */
   audio?: AudioOptions;
+  /**
+   * Efeitos visuais. Padrão: nível `auto` (`full`, ou `reduced` quando o
+   * sistema pede menos movimento).
+   */
+  effects?: EffectsOptions;
 }
 
 /** Controle de uma rolagem em andamento. */
@@ -108,6 +125,9 @@ export interface EngineRenderer {
   setDieTransform(dieId: DieId, position: Vec3, rotation: Quat): void;
   getDieRotation(dieId: DieId): Quat;
   getDiePosition(dieId: DieId): Vec3;
+  /** Coloca na cena o grupo dos efeitos. */
+  addObject(object: SceneObject): void;
+  removeObject(object: SceneObject): void;
   startLoop(onFrame: () => void): void;
   stopLoop(): void;
   render(): void;
@@ -136,6 +156,32 @@ interface TableEntry {
   definition: DieDefinition;
   /** Tema pedido no `DieSpec`; ausente usa o padrão do motor. */
   themeId: string | undefined;
+  /** Dado pedido de que este dado físico faz parte (o d100, para as suas partes). */
+  resultId: DieId;
+}
+
+/** Agenda `callback` daqui a `ms`; devolve o cancelamento. */
+export type SetTimer = (callback: () => void, ms: number) => () => void;
+
+const defaultSetTimer: SetTimer = (callback, ms) => {
+  const handle = setTimeout(callback, ms);
+  return () => {
+    clearTimeout(handle);
+  };
+};
+
+/** Sem preferência de movimento: usado quando o motor não recebe um ambiente. */
+const NO_MOTION_PREFERENCE: EffectsEnvironment = {
+  prefersReducedMotion: () => false,
+  onReducedMotionChange: () => () => undefined,
+};
+
+/** Mistura a semente da rolagem para as partículas: nunca o RNG dos valores. */
+const EFFECT_SEED_SALT = 0x2c1b3c6d;
+
+/** Raio da esfera que envolve o dado, a partir dos vértices. */
+function boundingRadius(definition: DieDefinition): number {
+  return Math.max(...definition.vertices.map(({ x, y, z }) => Math.hypot(x, y, z)));
 }
 
 /** Dependências do motor. Uso interno e em testes; aplicações usam `DiceEngine.create`. */
@@ -148,6 +194,12 @@ export interface EngineDependencies {
   now: () => number;
   /** Áudio. Ausente: desligado. */
   audio?: DiceAudio;
+  /** Opções dos efeitos. Ausente: nível `off`. */
+  effects?: EffectsOptions;
+  /** Preferência de movimento do sistema. Ausente: nenhuma. */
+  effectsEnvironment?: EffectsEnvironment;
+  /** Temporizador para remover efeitos parados. Padrão: `setTimeout`. */
+  setTimer?: SetTimer;
 }
 
 interface Playback {
@@ -159,6 +211,8 @@ interface Playback {
   startedAt: number;
   collisionCursor: number;
   settled: boolean[];
+  /** Efeitos decididos antes do primeiro quadro, com a semente de cada um. */
+  effects: { planned: PlannedEffect; seed: number; fired: boolean }[];
 }
 
 interface ActiveRoll {
@@ -210,15 +264,29 @@ export class DiceEngine {
   /** Perfis sonoros pedidos por temas e desconhecidos, já avisados no console. */
   private readonly warnedProfiles = new Set<string>();
   private readonly audioPlayer: DiceAudio;
+  private readonly effectsLayer: DiceEffects;
+  private readonly setTimer: SetTimer;
+  /** Raio de cada tipo de dado, para dimensionar os efeitos. */
+  private readonly radii = new Map<string, number>();
   private active: ActiveRoll | undefined;
+  /** O laço de render está ligado (rolagem animando ou efeito em movimento). */
+  private looping = false;
+  /** Cancela a remoção agendada do próximo efeito parado. */
+  private cancelExpiry: (() => void) | undefined;
   private destroyed = false;
 
   /** Uso interno e em testes. Aplicações devem usar {@link DiceEngine.create}. */
   constructor(deps: EngineDependencies) {
     this.deps = deps;
+    this.setTimer = deps.setTimer ?? defaultSetTimer;
     this.audioPlayer =
       deps.audio ??
       new DiceAudio({ enabled: false }, browserAudioEnvironment(), { surface: 'wood' });
+    this.effectsLayer = new DiceEffects(
+      deps.effects ?? { level: 'off' },
+      deps.effectsEnvironment ?? NO_MOTION_PREFERENCE,
+      this.effectsHost(),
+    );
   }
 
   /** Cria um motor dentro de `container`, desenhando em um canvas transparente. */
@@ -229,6 +297,7 @@ export class DiceEngine {
     // Valida o tema e o áudio antes de criar o contexto WebGL.
     const theme = options.theme === undefined ? undefined : parseTheme(options.theme);
     const audioOptions = parseAudioOptions(options.audio);
+    const effectsOptions = parseEffectsOptions(options.effects);
     const presentation = options.presentation ?? 'overlay';
     const renderer = new DiceRenderer(container, {
       diceSizePx: options.diceSizePx ?? 72,
@@ -249,6 +318,8 @@ export class DiceEngine {
         audio: new DiceAudio(audioOptions, browserAudioEnvironment(), {
           surface: presentation === 'tray' ? 'felt' : 'wood',
         }),
+        effects: effectsOptions,
+        effectsEnvironment: browserEffectsEnvironment(),
       });
       if (theme) {
         engine.registerTheme(theme);
@@ -331,6 +402,7 @@ export class DiceEngine {
     if (this.active) this.finishCancelled(this.active, 'cleared');
     this.removeTableDice();
     this.audioPlayer.stopAll();
+    this.effectsLayer.stopAll();
     this.deps.renderer.render();
   }
 
@@ -398,6 +470,14 @@ export class DiceEngine {
     return this.audioPlayer;
   }
 
+  /**
+   * Controles dos efeitos visuais: nível, disparo direto, presets e
+   * estatísticas. Um efeito nunca muda um resultado nem toca nos dados.
+   */
+  get effects(): DiceEffectsControls {
+    return this.effectsLayer;
+  }
+
   /** Qualidade efetiva do render, depois de resolver `auto`. */
   get quality(): RenderQuality {
     return this.deps.renderer.quality;
@@ -428,7 +508,11 @@ export class DiceEngine {
     if (this.active) this.finishCancelled(this.active, 'destroyed');
     this.removeTableDice();
     this.destroyed = true;
+    this.cancelExpiry?.();
+    this.cancelExpiry = undefined;
+    this.looping = false;
     this.audioPlayer.dispose();
+    this.effectsLayer.dispose();
     this.deps.renderer.dispose();
     this.emitter.clear();
   }
@@ -474,6 +558,10 @@ export class DiceEngine {
 
       const offsets = this.reorient(plan, simulation);
       const { recording } = simulation;
+      const resultIds = plan.dice.map(() => '');
+      for (const result of plan.results) {
+        for (const index of result.parts) resultIds[index] = result.dieId;
+      }
 
       plan.dice.forEach((die, i) => {
         renderer.addDie(die.dieId, die.definition, appearances[i]!);
@@ -481,6 +569,7 @@ export class DiceEngine {
           type: die.type,
           definition: die.definition,
           themeId: themeIds[i],
+          resultId: resultIds[i]!,
         });
         const start = sampleTrajectory(recording.dice[i]!, 0);
         renderer.setDieTransform(
@@ -497,6 +586,7 @@ export class DiceEngine {
         startedAt: this.deps.now(),
         collisionCursor: 0,
         settled: plan.dice.map(() => false),
+        effects: this.planEffects(plan, themes),
       };
       this.emitter.emit('rollStarted', {
         rollId: plan.rollId,
@@ -511,9 +601,8 @@ export class DiceEngine {
       });
       if (active.finished) return;
       this.scheduleSounds(plan, recording, themes);
-      renderer.startLoop(() => {
-        this.onFrame(active);
-      });
+      this.fireEffects(active.playback, (effect) => effect.on === 'start');
+      this.syncLoop();
     } catch (error) {
       this.finishFailed(active, toDiceError(error));
     }
@@ -606,6 +695,17 @@ export class DiceEngine {
         if (active.finished) return;
       }
 
+      // Efeitos de "parou": quando todos os dados físicos do alvo pararam.
+      if (playback.effects.some(({ fired, planned }) => !fired && planned.on === 'settled')) {
+        const settledIds = new Set(
+          plan.dice.filter((_, i) => playback.settled[i]).map(({ dieId }) => dieId),
+        );
+        this.fireEffects(
+          playback,
+          ({ on, dieIds }) => on === 'settled' && dieIds.every((id) => settledIds.has(id)),
+        );
+      }
+
       if (step >= recording.stepCount) this.finishCompleted(active);
     } catch (error) {
       this.finishFailed(active, toDiceError(error));
@@ -656,6 +756,8 @@ export class DiceEngine {
 
     // Os dados ficam na mesa até a próxima rolagem ou `clear()`.
     this.settle(active);
+    // Só depois da verificação: o efeito de "concluída" nunca aparece num valor não conferido.
+    if (active.playback) this.fireEffects(active.playback, ({ on }) => on === 'completed');
     const outcome = {
       status: 'completed',
       rollId: plan.rollId,
@@ -666,6 +768,7 @@ export class DiceEngine {
     } as const;
     this.emitter.emit('rollCompleted', outcome);
     active.resolve(outcome);
+    this.syncLoop();
   }
 
   private finishCancelled(active: ActiveRoll, reason: RollCancelReason): void {
@@ -682,6 +785,7 @@ export class DiceEngine {
     } as const;
     this.emitter.emit('rollCancelled', outcome);
     active.resolve(outcome);
+    this.syncLoop();
   }
 
   private finishFailed(active: ActiveRoll, error: DiceError): void {
@@ -699,14 +803,146 @@ export class DiceEngine {
     } as const;
     this.emitter.emit('rollFailed', outcome);
     active.resolve(outcome);
+    this.syncLoop();
   }
 
-  /** Marca a rolagem como encerrada e para a animação. */
+  /**
+   * Marca a rolagem como encerrada. O laço de render é conferido depois
+   * (`syncLoop`): ele continua se ainda houver efeito em movimento.
+   */
   private settle(active: ActiveRoll): void {
     active.finished = true;
-    if (this.active === active) {
-      this.active = undefined;
+    if (this.active === active) this.active = undefined;
+  }
+
+  /** Um quadro: avança a rolagem ativa, depois os efeitos. */
+  private readonly frame = (): void => {
+    const active = this.active;
+    if (active) this.onFrame(active);
+    this.effectsLayer.update();
+    this.syncLoop();
+  };
+
+  /**
+   * Liga o laço de render enquanto há rolagem animando ou efeito em
+   * movimento, e o desliga quando não há nenhum dos dois. Efeitos parados não
+   * precisam do laço: são desenhados uma vez e removidos por temporizador.
+   */
+  private syncLoop(): void {
+    if (this.destroyed) return;
+    const rolling = this.active?.playback !== undefined && !this.active.finished;
+    const needed = rolling || this.effectsLayer.needsFrames;
+    if (needed && !this.looping) {
+      this.looping = true;
+      this.deps.renderer.startLoop(this.frame);
+    } else if (!needed && this.looping) {
+      this.looping = false;
       this.deps.renderer.stopLoop();
+    }
+    this.cancelExpiry?.();
+    this.cancelExpiry = undefined;
+    const expiry = needed ? undefined : this.effectsLayer.nextExpiry;
+    if (expiry === undefined) return;
+    this.cancelExpiry = this.setTimer(
+      () => {
+        this.cancelExpiry = undefined;
+        if (this.destroyed) return;
+        this.effectsLayer.update();
+        this.deps.renderer.render();
+        this.syncLoop();
+      },
+      Math.max(expiry - this.deps.now(), 0) + 1,
+    );
+  }
+
+  /** A camada de efeitos mudou fora do laço (disparo direto, nível, parada). */
+  private onEffectsChanged(): void {
+    if (this.destroyed) return;
+    this.syncLoop();
+    if (!this.looping) this.deps.renderer.render();
+  }
+
+  private effectsHost(): EffectsHost {
+    return {
+      attach: (object) => {
+        this.deps.renderer.addObject(object);
+      },
+      detach: (object) => {
+        this.deps.renderer.removeObject(object);
+      },
+      resolveDice: (ids) =>
+        [...this.tableDice]
+          .filter(([dieId, { resultId }]) => !ids || ids.includes(dieId) || ids.includes(resultId))
+          .map(([dieId]) => dieId),
+      dieInfo: (dieId) => {
+        const entry = this.tableDice.get(dieId);
+        if (!entry || this.destroyed) return undefined;
+        return {
+          position: this.deps.renderer.getDiePosition(dieId),
+          radius: this.radiusOf(entry.definition),
+        };
+      },
+      now: () => this.deps.now(),
+      changed: () => {
+        this.onEffectsChanged();
+      },
+    };
+  }
+
+  private radiusOf(definition: DieDefinition): number {
+    let radius = this.radii.get(definition.type);
+    if (radius === undefined) {
+      radius = boundingRadius(definition);
+      this.radii.set(definition.type, radius);
+    }
+    return radius;
+  }
+
+  /**
+   * Efeitos desta rolagem: os gatilhos do pedido, comparados com os valores
+   * já decididos, e os efeitos dos temas de cada dado. Os de tema acompanham o
+   * movimento (`start`) ou o repouso (`settled`), conforme o efeito.
+   */
+  private planEffects(plan: RollPlan, themes: readonly ThemeConfig[]): Playback['effects'] {
+    if (this.effectsLayer.level === 'off') return [];
+    const subjects = plan.results.map((result) => ({
+      dieId: result.dieId,
+      type: result.type,
+      value: result.value,
+      parts: result.parts.map((index) => plan.dice[index]!.dieId),
+      ...(result.role === undefined ? {} : { role: result.role }),
+    }));
+    const planned = planEffectTriggers(subjects, plan.effects);
+    plan.results.forEach((result, r) => {
+      const theme = themes[result.parts[0]!];
+      for (const effect of theme?.effects ?? []) {
+        planned.push({
+          effect,
+          on: this.effectsLayer.phaseOf(effect) === 'motion' ? 'start' : 'settled',
+          options: {},
+          dieIds: subjects[r]!.parts,
+          subject: result.dieId,
+        });
+      }
+    });
+    return planned.map((effect, i) => ({
+      planned: effect,
+      seed: ((plan.seed ^ EFFECT_SEED_SALT) + i) >>> 0,
+      fired: false,
+    }));
+  }
+
+  /** Mostra os efeitos planejados que satisfazem `when`. Uma falha vira aviso. */
+  private fireEffects(playback: Playback, when: (effect: PlannedEffect) => boolean): void {
+    for (const entry of playback.effects) {
+      if (entry.fired || !when(entry.planned)) continue;
+      entry.fired = true;
+      try {
+        const { effect, dieIds, options } = entry.planned;
+        this.effectsLayer.spawnOnDice(effect, dieIds, options, entry.seed);
+      } catch (error) {
+        console.warn('[3dados] Falha ao mostrar um efeito:', error);
+      }
     }
   }
 
@@ -803,6 +1039,8 @@ export class DiceEngine {
   }
 
   private removeTableDice(): void {
+    // Efeitos presos a estes dados saem com eles; os presos a um ponto continuam.
+    this.effectsLayer.stopForDice(this.tableDice.keys());
     for (const dieId of this.tableDice.keys()) this.deps.renderer.removeDie(dieId);
     this.tableDice.clear();
   }

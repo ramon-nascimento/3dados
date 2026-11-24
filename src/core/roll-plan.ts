@@ -1,4 +1,5 @@
 import type { DieDefinition, DieFace, DieRegistry } from './die-definition';
+import { parseEffectTriggers, type EffectTrigger } from './effect-trigger';
 import { DiceError } from './errors';
 import { randomInt, type RandomSource } from './random';
 import type { DieId, DieType, DieValueSource, RollId, RollMetadata, RollRequest } from './types';
@@ -45,6 +46,8 @@ export interface RollPlan {
   /** Semente da trajetória visual. */
   readonly seed: number;
   readonly metadata?: RollMetadata;
+  /** Gatilhos de efeito validados, na ordem do pedido. */
+  readonly effects: readonly EffectTrigger[];
 }
 
 function invalid(message: string, details?: Record<string, unknown>): DiceError {
@@ -102,6 +105,10 @@ export function planRoll(request: RollRequest, registry: DieRegistry, rng: Rando
   if (raw.metadata !== undefined && !isRecord(raw.metadata)) {
     throw invalid('"metadata" precisa ser um objeto.');
   }
+
+  const effects = parseEffectTriggers(raw.effects, (message, path) =>
+    invalid(`${path}: ${message}`, { path }),
+  );
 
   const rollId = raw.id ?? generateRollId(rng);
   const dice: PlannedDie[] = [];
@@ -229,5 +236,6 @@ export function planRoll(request: RollRequest, registry: DieRegistry, rng: Rando
     results,
     seed: raw.seed === undefined ? rng.nextUint32() : raw.seed >>> 0,
     ...(raw.metadata === undefined ? {} : { metadata: raw.metadata }),
+    effects,
   };
 }

@@ -4,6 +4,35 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.7.0] — 2026-11-24
+
+Etapa 7 — Efeitos visuais.
+
+### Adicionado
+
+- Camada de efeitos visuais em grupo próprio na cena, sem tocar nos dados: `highlight`, `glow`, `aura`, `trail`, `burst`, `fire`, `frost`, `lightning`, `critical` e `failure` (`EFFECTS`).
+- Gatilhos no pedido de rolagem (`RollRequest.effects`): efeito, momento (`start`, `settled` ou `completed`), condição por dados (`when: { type, role, values, dieIds }`) e opções. O motor só compara; a regra é da aplicação. No d100, `values` compara o valor de 1 a 100.
+- `engine.effects`: `trigger` (nos dados da mesa, em dados escolhidos ou num ponto), `register` (presets em JSON sobre os efeitos internos), `setLevel`, `has`, `stopAll` e `getStats` (efeitos ativos, partículas, objetos na cena, recursos criados e liberados, disparos ignorados).
+- Opção `effects` de `DiceEngine.create` (`level` e `maxParticles`).
+- Níveis `off`, `reduced` e `full`, e `auto` (padrão), que segue `prefers-reduced-motion` e acompanha a mudança. No `reduced` não há partículas, rastros nem flashes; no `full`, no máximo um flash a cada 400 ms.
+- `ThemeConfig.effects` passa a ter efeito: efeitos que acompanham todo dado do tema.
+- Exportados `EFFECTS`, `EFFECT_LIMITS`, `EFFECT_MOMENTS` e os tipos dos efeitos.
+- Playground: painel de efeitos (nível, intensidade, cor, duração, disparo por efeito, regras de exemplo para crítico e falha no d20, estatísticas medidas), efeitos no painel de personalização, brilho dourado em Esperança e aura violeta em Medo. `?effects=off|reduced|full` escolhe o nível na URL.
+- Capturas de referência dos efeitos (`tests/visual/effects.spec.ts`) e medição do custo por quadro em `npm run bench`.
+
+### Alterado
+
+- O laço de render continua depois da rolagem enquanto houver efeito animado. Efeitos parados não mantêm o laço ligado.
+- `clear()`, uma rolagem nova, o cancelamento e `destroy()` também encerram os efeitos e liberam seus recursos.
+- As capturas de referência dos materiais são feitas com `effects=off`.
+
+### Limitações conhecidas
+
+- Sem bloom: o brilho é um halo aditivo atrás do dado.
+- A aplicação não fornece efeitos com geometria ou shader próprios, só presets dos internos.
+- No `reduced`, `trail` não mostra nada.
+- O custo de GPU dos efeitos não foi medido.
+
 ## [0.6.0] — 2026-11-24
 
 Etapa 6 — Sonorização.

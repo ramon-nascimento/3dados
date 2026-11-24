@@ -174,6 +174,28 @@ npx vitest run --project bench --silent=false tests/bench/audio-plan.test.ts
 - **Desbloqueio:** decodificar os 37 arquivos em paralelo levou cerca de 117 ms no playground (em série, cerca de 186 ms). Sons pedidos nesse intervalo são agendados quando o banco fica pronto, se ainda não estiverem mais de 40 ms atrasados.
 - Os tempos de CPU variam cerca de duas vezes entre execuções, como nas demais medições.
 
+## Efeitos (Etapa 7)
+
+Mesma máquina das demais medições (ver "Ambiente"), Node, 2026-11-24. Mede o custo de CPU da camada de efeitos por quadro: avançar as partículas, os anéis e os halos e escrever os buffers. Não inclui o desenho na GPU. Um `critical` disparado em todos os dados, 150 quadros de 1/60 s, depois de uma execução de aquecimento. Comando:
+
+```sh
+npx vitest run --project bench --silent=false tests/bench/effects.test.ts
+```
+
+| Caso                          | Criação | Atualização mediana | Atualização p95 | Atualização máx. | Pico de partículas |
+| ----------------------------- | ------- | ------------------- | --------------- | ---------------- | ------------------ |
+| `critical`, 1 dado            | 1,42 ms | 0,002 ms            | 0,036 ms        | 0,120 ms         | 70                 |
+| `critical`, 10 dados          | 2,16 ms | 0,004 ms            | 0,034 ms        | 0,061 ms         | 700                |
+| `critical`, 30 dados          | 2,68 ms | 0,012 ms            | 0,041 ms        | 0,540 ms         | 2.000 ¹            |
+| `fire`, 30 dados, teto 20.000 | —       | 0,030 ms            | 0,050 ms        | —                | 1.688              |
+
+¹ O teto padrão (`maxParticles`, 2.000): com 30 dados, parte das faíscas não nasce.
+
+- **A criação** inclui gerar as texturas na primeira vez (64×64 px, por código) e os buffers de cada emissor; acontece no quadro do disparo.
+- **A GPU não foi medida.** O custo de desenhar depende da área de tela coberta pelos halos e partículas aditivos (preenchimento), e varia muito entre placas. Fica para a Etapa 9, com mais de uma máquina.
+- **Memória de GPU no navegador** (playground, Chromium do Playwright, `tests/e2e/effects.spec.ts`): depois de 20 rolagens com `critical` e `trail` e de os efeitos terminarem, `renderer.info.memory` volta ao valor de antes (geometrias e texturas); durante os efeitos, é maior.
+- Os tempos de CPU variam cerca de duas vezes entre execuções, como nas demais medições.
+
 ## Convergência por quantidade de dados e área (antes da recuperação)
 
 Uma tentativa é descartada quando algum dado para inclinado ou sobre outro dado. O motor tenta até 12 sementes; se nenhuma serve, a rolagem falha explicitamente (`SIMULATION_FAILED`). 150 rolagens por caso.

@@ -250,6 +250,53 @@ engine.on('rollCompleted', ({ dice }) => {
 
 **Créditos.** Os sons do pacote são CC0 (Kenney). O crédito não é obrigatório; a lista está em `assets/CREDITS.md`.
 
+## Efeitos
+
+O motor não sabe o que é um crítico. A aplicação diz, no próprio pedido, que efeito mostrar para quais valores. A condição é avaliada pelo motor quando os valores já estão decididos, então funciona também no modo autônomo, em que a aplicação só conhece o valor depois:
+
+```ts
+// Tormenta20 com margem de ameaça 19: a regra é da aplicação.
+engine.roll({
+  dice: [
+    { type: 'd20', role: 'test' },
+    { type: 'd8', count: 2, role: 'damage' },
+  ],
+  effects: [
+    { effect: 'critical', when: { role: 'test', values: [19, 20] } },
+    { effect: 'failure', when: { role: 'test', values: [1] } },
+  ],
+});
+```
+
+Sem `on`, o efeito aparece quando o dado para (`settled`). Use `on: 'completed'` para esperar a conferência final, ou `on: 'start'` para algo que acompanhe o lançamento, como `trail`.
+
+**Efeito decidido depois.** Quando a decisão depende de algo que o motor não vê (a soma com modificadores, a dificuldade do teste), dispare pela chamada direta:
+
+```ts
+engine.on('rollCompleted', ({ dice }) => {
+  const teste = dice.find((die) => die.role === 'test');
+  if (teste && teste.value + modificador >= dificuldade) {
+    engine.effects.trigger('burst', { dieIds: [teste.dieId], color: '#7fd4ff' });
+  }
+});
+```
+
+**Efeitos próprios.** Um preset é um efeito interno com outra cor, duração ou intensidade. Registre-o uma vez e use pelo nome no pedido, no tema ou em `trigger`:
+
+```ts
+engine.effects.register('aura-medo', { base: 'aura', color: '#b98cff' });
+engine.registerTheme({ ...medo, effects: ['aura-medo'] }); // acompanha todo dado do tema
+```
+
+Um nome que o cliente não conhece (por exemplo, um preset que outro jogador registrou) só gera um aviso no console; a rolagem continua.
+
+**Acessibilidade.** O padrão `level: 'auto'` segue a preferência do sistema por menos movimento (`prefers-reduced-motion`): sem partículas, sem rastros e sem flashes. Ofereça também a escolha ao jogador:
+
+```ts
+const engine = await DiceEngine.create(elemento, { effects: { level: prefs.efeitos ?? 'auto' } });
+engine.effects.setLevel('off'); // nenhum objeto de efeito é criado
+```
+
 ## Empacotamento
 
 - A biblioteca é distribuída como ESM, com declarações de tipos.

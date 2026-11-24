@@ -4,7 +4,7 @@ A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto
 
 Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
 
-## Disponível hoje (0.6.0)
+## Disponível hoje (0.7.0)
 
 Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
@@ -22,25 +22,27 @@ const engine = await DiceEngine.create(container, {
   quality: 'auto', // | 'low' | 'medium' | 'high'
   theme: meuTema, // ThemeConfig opcional; vira o tema padrão
   audio: { baseUrl: '/3dados/sounds/' }, // AudioOptions; ver "Áudio"
+  effects: { level: 'auto' }, // EffectsOptions; ver "Efeitos"
 });
 ```
 
-`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `audio` for inválido. `presentation`, `quality`, `theme` e `audio` estão descritos em [Aparência](#aparência), [Temas](#temas) e [Áudio](#áudio).
+`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `audio` ou `effects` forem inválidos. `presentation`, `quality`, `theme`, `audio` e `effects` estão descritos em [Aparência](#aparência), [Temas](#temas), [Áudio](#áudio) e [Efeitos](#efeitos).
 
-| Método                         | Efeito                                                                                        |
-| ------------------------------ | --------------------------------------------------------------------------------------------- |
-| `roll(request): RollHandle`    | Inicia uma rolagem. Nunca lança.                                                              |
-| `cancel(rollId?): boolean`     | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado. |
-| `clear(): void`                | Cancela a rolagem em andamento e remove os dados da mesa.                                     |
-| `on(evento, ouvinte)`          | Registra um ouvinte; devolve a função que o remove.                                           |
-| `registerDie(definition)`      | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                |
-| `getDiceOnTable(): TableDie[]` | Dados físicos na mesa, com a posição e a orientação reais das malhas.                         |
-| `registerTheme(theme)`         | Registra ou substitui um tema. Lança `DiceError` `INVALID_THEME` se for inválido.             |
-| `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.              |
-| `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                  |
-| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.           |
-| `audio: DiceAudioControls`     | Controles do áudio. Ver [Áudio](#áudio).                                                      |
-| `destroy(): void`              | Cancela, libera GPU, fecha o áudio e remove o canvas. A instância não pode ser reutilizada.   |
+| Método                         | Efeito                                                                                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `roll(request): RollHandle`    | Inicia uma rolagem. Nunca lança.                                                                                |
+| `cancel(rollId?): boolean`     | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado.                   |
+| `clear(): void`                | Cancela a rolagem em andamento e remove os dados da mesa.                                                       |
+| `on(evento, ouvinte)`          | Registra um ouvinte; devolve a função que o remove.                                                             |
+| `registerDie(definition)`      | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                                  |
+| `getDiceOnTable(): TableDie[]` | Dados físicos na mesa, com a posição e a orientação reais das malhas.                                           |
+| `registerTheme(theme)`         | Registra ou substitui um tema. Lança `DiceError` `INVALID_THEME` se for inválido.                               |
+| `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.                                |
+| `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                                    |
+| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.                             |
+| `audio: DiceAudioControls`     | Controles do áudio. Ver [Áudio](#áudio).                                                                        |
+| `effects: DiceEffectsControls` | Controles dos efeitos visuais. Ver [Efeitos](#efeitos).                                                         |
+| `destroy(): void`              | Cancela, libera GPU, fecha o áudio, encerra os efeitos e remove o canvas. A instância não pode ser reutilizada. |
 
 ```ts
 interface RollHandle {
@@ -78,6 +80,7 @@ interface RollRequest {
   dice: readonly DieSpec[];
   seed?: number; // semente da trajetória visual; não afeta valores
   metadata?: RollMetadata;
+  effects?: readonly EffectTrigger[]; // efeitos por condição; ver "Efeitos"
 }
 
 interface RollMetadata {
@@ -96,6 +99,7 @@ Regras:
 - `metadata` é devolvido sem alteração nos eventos e no desfecho.
 - No máximo 30 dados físicos por rolagem (um d100 conta como dois). A capacidade real depende da área e do tamanho dos dados: ver [BENCHMARKS.md](BENCHMARKS.md).
 - `values` usa os valores do dado: 1 a 10 no d10, 1 a 100 no d100.
+- `effects` tem no máximo 32 gatilhos e nunca muda um valor: as condições são avaliadas depois de os valores estarem fixos.
 
 ### Desfecho
 
@@ -355,7 +359,7 @@ interface ThemeConfig {
   metalness?: number; // 0–1
   emissive?: { color: string; intensity: number; target?: 'numbers' | 'body' }; // intensidade 0–4
   bevel?: number; // largura do chanfro das arestas, 0–0,12; só visual
-  effects?: string[]; // reservado para a Etapa 7; preservado, sem efeito
+  effects?: string[]; // efeitos que acompanham os dados do tema; ver "Efeitos"
   soundProfile?: string; // perfil sonoro; ausente usa o do material (ver Áudio)
 }
 ```
@@ -464,6 +468,103 @@ engine.on('rollCompleted', ({ dice }) => {
 
 Exportados: `BUILTIN_SOUNDS`, `SOUND_PROFILES`, `SURFACES`, `intensityToGain` e os tipos `AudioOptions`, `AudioState`, `AudioStats`, `BuiltinSound`, `DiceAudioControls`, `ImpactOptions`, `PlayOptions`, `SoundProfile`, `SoundSource` e `Surface`.
 
+### Efeitos
+
+Efeitos visuais sobre os dados ou sobre a mesa: brilhos, auras, rastros, explosões, efeitos elementais, destaque e animações para críticos e falhas. **O motor não decide quando um efeito cabe:** a aplicação declara condições no pedido ou chama `trigger`. Decisões em [ADR 0011](adr/0011-efeitos-visuais.md).
+
+```ts
+const engine = await DiceEngine.create(container, {
+  effects: {
+    level: 'auto', // | 'full' | 'reduced' | 'off'. Padrão: 'auto'
+    maxParticles: 2000, // teto de partículas vivas somando todos os efeitos, de 0 a 20.000
+  },
+});
+
+// Gatilhos no pedido: a regra é da aplicação; o motor só compara dados.
+engine.roll({
+  dice: [{ type: 'd20' }, { type: 'd12', role: 'hope' }],
+  effects: [
+    { effect: 'critical', when: { type: 'd20', values: [20] } },
+    { effect: 'failure', when: { type: 'd20', values: [1] } },
+    { effect: 'highlight', on: 'completed', when: { role: 'hope' } },
+    { effect: 'trail', on: 'start' }, // sem `when`: todos os dados
+  ],
+});
+
+// Disparo direto, a qualquer momento.
+engine.effects.trigger('burst', { dieIds: ['r1:0'], color: '#7fd4ff', intensity: 1.5 });
+engine.effects.trigger('glow', { position: { x: 0, y: 0.5, z: 0 } }); // um ponto da mesa
+engine.effects.register('fogo-azul', { base: 'fire', color: '#4aa8ff', durationMs: 1500 });
+engine.effects.setLevel('reduced');
+engine.effects.stopAll();
+engine.effects.getStats();
+```
+
+```ts
+interface EffectTrigger {
+  effect: string; // efeito interno ou preset registrado
+  on?: 'start' | 'settled' | 'completed'; // padrão: 'settled'
+  when?: EffectCondition; // ausente: todos os dados da rolagem
+  options?: EffectOptions;
+}
+
+interface EffectCondition {
+  // Todos opcionais; os presentes precisam valer juntos (E).
+  type?: string; // tipo do dado: 'd20', 'd100', um dado personalizado
+  role?: string; // o `role` do DieSpec
+  values?: readonly number[]; // valor oficial do dado; no d100, o valor de 1 a 100
+  dieIds?: readonly string[]; // id do dado pedido, ou de uma parte do d100 ('<id>:tens')
+}
+
+interface EffectOptions {
+  color?: string; // "#rrggbb"; padrão: a cor do efeito
+  durationMs?: number; // 100 a 10.000; padrão: a do efeito
+  intensity?: number; // 0 a 2; padrão 1. Escala tamanho, quantidade e brilho
+}
+```
+
+**Momentos.** `start` dispara junto com `rollStarted`. `settled` dispara no quadro em que o dado para (no d100, quando as duas partes param). `completed` dispara depois de o motor conferir as faces na cena, logo antes de `rollCompleted`. Num d100, o efeito vai para as duas partes, salvo quando `dieIds` aponta uma parte.
+
+**Efeitos internos** (`EFFECTS`):
+
+| Nome        | `full`                                       | `reduced`             |
+| ----------- | -------------------------------------------- | --------------------- |
+| `highlight` | Anel no chão sob o dado, pulsando            | Anel parado           |
+| `glow`      | Halo atrás do dado, pulsando                 | Halo parado           |
+| `aura`      | Halo leve e partículas subindo               | Halo parado           |
+| `trail`     | Rastro de partículas enquanto o dado se move | Nada                  |
+| `burst`     | Flash curto e explosão de faíscas            | Anel que some devagar |
+| `fire`      | Halo e brasas subindo                        | Halo parado           |
+| `frost`     | Halo e cristais caindo                       | Halo parado           |
+| `lightning` | Halo e faíscas rápidas                       | Halo parado           |
+| `critical`  | Explosão dourada, halo e anel pulsando       | Anel e halo parados   |
+| `failure`   | Anel vermelho pulsando, halo e fumaça escura | Anel parado           |
+
+Cada efeito tem uma cor e uma duração padrão; `trail` dura até o dado parar (no máximo 8 s). Os efeitos não tocam nos dados: ficam em objetos próprios que só acompanham a posição de cada um.
+
+| Membro                    | Efeito                                                                                                                                                           |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `level: EffectLevel`      | Nível efetivo: `off`, `reduced` ou `full`.                                                                                                                       |
+| `levelSetting`            | Nível pedido, inclusive `auto`.                                                                                                                                  |
+| `setLevel(level)`         | Muda o nível. Interrompe os efeitos em andamento.                                                                                                                |
+| `trigger(name, options?)` | Mostra um efeito agora. `options`: `EffectOptions` mais `dieIds` ou `position`; sem os dois, vale para todos os dados da mesa. Devolve `EffectHandle` ou `null`. |
+| `register(name, preset)`  | Registra ou substitui um preset: `{ base, color?, durationMs?, intensity? }`, com `base` um efeito interno. Não pode usar o nome de um efeito interno.           |
+| `has(name)`               | Se o nome é um efeito interno ou um preset registrado.                                                                                                           |
+| `stopAll()`               | Interrompe todos os efeitos e libera os recursos.                                                                                                                |
+| `getStats(): EffectStats` | `level`, `active`, `particles`, `objects` (na cena), `created` e `disposed` (geometrias, materiais e texturas) e `skipped`.                                      |
+
+`EffectHandle` tem `id` e `stop()`. `trigger` devolve `null`, sem lançar, quando o nível é `off`, o efeito é desconhecido (aviso no console, uma vez por nome) ou não há alvo na mesa; o disparo conta em `skipped`. Opções inválidas lançam `DiceError` `INVALID_ARGUMENT` com o campo na mensagem (`options.intensity: esperado um número de 0 a 2.`); no pedido, um gatilho inválido faz a rolagem falhar com `INVALID_REQUEST` (`effects[0].on: esperado "start", "settled", "completed".`). Um nome de efeito desconhecido no pedido não é erro: só avisa.
+
+**Níveis.** `off` não cria nenhum objeto, textura ou material, nem por gatilho, tema ou `trigger`. `reduced` não tem movimento: sem partículas, sem rastro e sem flash; sobra o que é parado (anel e halo), que some ao fim da duração. `full` tem tudo, com o flash limitado a um a cada 400 ms. `auto` usa `full`, ou `reduced` quando o sistema pede menos movimento (`prefers-reduced-motion: reduce`), e acompanha a mudança da preferência; um nível escolhido em `setLevel` vale acima dela.
+
+**Efeitos do tema.** `ThemeConfig.effects` acompanha todo dado do tema, sem gatilho: `trail` enquanto ele rola, os demais quando ele para. Um nome desconhecido só avisa.
+
+**Recursos.** Um efeito libera geometria, material e textura ao terminar, em `stop`, quando os dados saem da mesa (nova rolagem, cancelamento, `clear`) e em `destroy`. `getStats()` mostra `created` e `disposed`; sem efeitos ativos, são iguais.
+
+**Os efeitos nunca mudam um resultado.** As condições são avaliadas depois de os valores estarem fixos, as partículas usam uma semente própria (não o RNG dos valores) e uma falha ao disparar vira aviso no console.
+
+Exportados: `EFFECTS`, `EFFECT_LIMITS`, `EFFECT_MOMENTS` e os tipos `BuiltinEffect`, `DiceEffectsControls`, `EffectCondition`, `EffectHandle`, `EffectLevel`, `EffectLevelSetting`, `EffectMoment`, `EffectOptions`, `EffectPreset`, `EffectStats`, `EffectTrigger`, `EffectTriggerOptions` e `EffectsOptions`.
+
 ### Fontes de aleatoriedade
 
 ```ts
@@ -480,18 +581,12 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.6.0'
+import { VERSION } from '3dados'; // '0.7.0'
 ```
 
 ## Proposto (ainda não implementado)
 
 ```ts
-const engine = await DiceEngine.create(container, {
-  effects: { level: 'full' }, // | 'reduced' | 'off'
-});
-
-engine.effects.trigger('critical', { dieIds });
-engine.effects.setLevel('reduced');
 engine.remote.receive(envelope);
 engine.getState();
 engine.getStats();
@@ -499,7 +594,6 @@ engine.getStats();
 
 | Funcionalidade                                         | Etapa |
 | ------------------------------------------------------ | ----- |
-| `effects`                                              | 7     |
 | `remote`, `getState`, `getStats`, rolagens simultâneas | 8     |
 
 ### Mensagens externas (multiplayer)

@@ -1,4 +1,5 @@
 import {
+  EFFECTS,
   MATERIAL_PRESETS,
   MATERIALS,
   SOUND_PROFILES,
@@ -11,7 +12,11 @@ import {
   type TextureKind,
   type ThemeConfig,
 } from '3dados';
+import { PLAYGROUND_PRESETS, effectLabel } from './effects-panel';
 import { EXAMPLE_THEMES, deleteStoredTheme, loadStoredThemes, saveStoredTheme } from './themes';
+
+/** Efeitos oferecidos para os temas: os internos e os presets do playground. */
+const THEME_EFFECTS: readonly string[] = [...EFFECTS, ...PLAYGROUND_PRESETS.map((p) => p.name)];
 
 const MATERIAL_LABELS: Record<MaterialKind, string> = {
   plastic: 'Plástico',
@@ -99,6 +104,7 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
   const importInput = byTestId<HTMLInputElement>('theme-import');
   const status = byTestId('theme-status');
   const numericRows = byTestId('theme-numeric');
+  const effectChecks = byTestId('theme-effects');
 
   material.append(...MATERIALS.map((m) => option(m, MATERIAL_LABELS[m])));
   // Os perfis sonoros têm os mesmos nomes dos materiais.
@@ -139,9 +145,21 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
     numeric.set(field.key, { custom, range, output });
   }
 
+  const effectInputs = new Map<string, HTMLInputElement>();
+  for (const name of THEME_EFFECTS) {
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.dataset.testid = `theme-effect-${name}`;
+    const label = document.createElement('label');
+    label.className = 'inline';
+    label.append(input, document.createTextNode(effectLabel(name)));
+    effectChecks.append(label);
+    effectInputs.set(name, input);
+  }
+
   const catalog = new Map<string, CatalogEntry>();
-  /** Campos que o formulário não edita (reservados), preservados ao salvar. */
-  let reserved: Pick<ThemeConfig, 'effects'> = {};
+  /** Efeitos do tema que o playground não conhece: preservados ao salvar. */
+  let unknownEffects: string[] = [];
 
   function setStatus(text: string, state?: 'ok' | 'bad'): void {
     status.textContent = text;
@@ -200,7 +218,9 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
       soundProfile.append(option(profile, `${profile} (desconhecido)`));
     }
     soundProfile.value = profile;
-    reserved = theme.effects ? { effects: [...theme.effects] } : {};
+    const effects = theme.effects ?? [];
+    for (const [name, input] of effectInputs) input.checked = effects.includes(name);
+    unknownEffects = effects.filter((name) => !effectInputs.has(name));
     syncNumeric(theme);
     json.value = serializeTheme(theme);
   }
@@ -228,7 +248,12 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
         target: emissiveTarget.value as 'numbers' | 'body',
       };
     }
-    return { ...theme, ...reserved };
+    const effects = [
+      ...[...effectInputs].filter(([, input]) => input.checked).map(([name]) => name),
+      ...unknownEffects,
+    ];
+    if (effects.length > 0) theme.effects = effects;
+    return theme;
   }
 
   /** Valida e registra no motor; os dados na mesa mudam de aparência na hora. */

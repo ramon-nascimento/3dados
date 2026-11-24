@@ -135,9 +135,14 @@
                 </label>
               </div>
             </fieldset>
+            <fieldset class="emissive">
+              <legend>Efeitos que acompanham os dados</legend>
+              <div class="effect-checks" data-testid="theme-effects"></div>
+            </fieldset>
             <p class="hint">
               Sem marcar, cada campo usa o padrão do material. A secundária colore o padrão da
-              textura; com textura lisa, colore as arestas.
+              textura; com textura lisa, colore as arestas. O rastro acompanha o dado rolando; os
+              demais efeitos aparecem quando ele para.
             </p>
             <div class="buttons">
               <button type="button" data-testid="theme-save">Salvar</button>
@@ -213,6 +218,91 @@
               O navegador só libera som depois de um clique na página. A superfície padrão é madeira
               no overlay e feltro na bandeja. Os sons especiais tocam quando a aplicação pede; o
               motor não decide o que é um crítico. Sons: Kenney (CC0).
+            </p>
+          </form>
+        </section>
+
+        <section class="panel" aria-labelledby="effects-title">
+          <h2 id="effects-title">Efeitos</h2>
+          <form class="form" data-testid="effects-form">
+            <div class="pair">
+              <label>
+                Nível
+                <select data-testid="effects-level"></select>
+              </label>
+              <label>
+                Intensidade
+                <input
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.1"
+                  value="1"
+                  data-testid="effects-intensity"
+                />
+              </label>
+            </div>
+            <div class="pair">
+              <label>
+                <span class="inline-head">
+                  <input
+                    type="checkbox"
+                    data-testid="effects-color-custom"
+                    aria-label="Cor própria"
+                  />
+                  Cor própria
+                </span>
+                <input type="color" value="#7fd4ff" data-testid="effects-color" />
+              </label>
+              <label>
+                Duração (ms)
+                <input
+                  type="number"
+                  min="100"
+                  max="10000"
+                  step="100"
+                  placeholder="padrão"
+                  data-testid="effects-duration"
+                />
+              </label>
+            </div>
+            <label class="inline">
+              <input type="checkbox" data-testid="effects-at-center" />
+              No centro da mesa, e não nos dados
+            </label>
+            <div class="effect-buttons" data-testid="effects-buttons"></div>
+            <div class="buttons">
+              <button type="button" data-testid="effects-stop">Parar todos</button>
+            </div>
+            <fieldset class="emissive">
+              <legend>Regras da aplicação (gatilhos no pedido)</legend>
+              <label class="inline">
+                <input type="checkbox" data-testid="effects-rule-critical" checked />
+                d20 = 20 → <code>critical</code>
+              </label>
+              <label class="inline">
+                <input type="checkbox" data-testid="effects-rule-failure" checked />
+                d20 = 1 → <code>failure</code>
+              </label>
+            </fieldset>
+            <dl class="readout">
+              <dt>Nível efetivo</dt>
+              <dd data-testid="effects-level-effective">—</dd>
+              <dt>Efeitos ativos</dt>
+              <dd data-testid="effects-active">—</dd>
+              <dt>Partículas</dt>
+              <dd data-testid="effects-particles">—</dd>
+              <dt>Objetos na cena</dt>
+              <dd data-testid="effects-objects">—</dd>
+              <dt>Recursos criados · liberados</dt>
+              <dd data-testid="effects-resources">—</dd>
+              <dt>Disparos ignorados</dt>
+              <dd data-testid="effects-skipped">—</dd>
+            </dl>
+            <p class="hint" data-testid="effects-status" aria-live="polite"></p>
+            <p class="hint">
+              O automático segue a preferência do sistema por menos movimento. As regras acima são
+              do playground: o motor só compara o tipo e o valor que a aplicação declara no pedido.
             </p>
           </form>
         </section>

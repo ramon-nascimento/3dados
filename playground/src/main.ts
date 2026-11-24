@@ -4,12 +4,14 @@ import {
   createDieDefinition,
   isDiceError,
   type DieSpec,
+  type EffectLevelSetting,
   type Presentation,
   type QualitySetting,
   type RollOutcome,
   type RollRequest,
 } from '3dados';
 import { createAudioPanel } from './audio-panel';
+import { PLAYGROUND_PRESETS, createEffectsPanel } from './effects-panel';
 import { createThemePanel, type ThemePanel } from './theme-panel';
 
 interface Diagnostic {
@@ -203,6 +205,12 @@ function renderRollThemes(panel: ThemePanel): void {
   if ([...select.options].some((element) => element.value === current)) select.value = current;
 }
 
+/** Nível de efeitos pedido na URL (`?effects=off`, usado nos testes). Padrão: `auto`. */
+function readEffectsLevel(): EffectLevelSetting {
+  const value = new URLSearchParams(location.search).get('effects');
+  return value === 'off' || value === 'reduced' || value === 'full' ? value : 'auto';
+}
+
 /** Lê o formulário. Um tipo com valores preenchidos é rolado em modo controlado. */
 function readRequest(): RollRequest {
   const theme = byTestId<HTMLSelectElement>('roll-theme').value || undefined;
@@ -280,7 +288,9 @@ async function start(): Promise<void> {
         baseUrl: '/sounds/',
         enabled: new URLSearchParams(location.search).get('audio') !== 'off',
       },
+      effects: { level: readEffectsLevel() },
     });
+    for (const { name, preset } of PLAYGROUND_PRESETS) engine.effects.register(name, preset);
     engine.registerDie(createFudgeDie());
     engine.registerDie(createBrickDie());
   } catch (error) {
@@ -297,6 +307,7 @@ async function start(): Promise<void> {
   });
   renderRollThemes(themes.panel);
   createAudioPanel(engine);
+  const effectsPanel = createEffectsPanel(engine);
   setStatus('pronto');
 
   // Acesso para depuração e para os testes de navegador, que leem a orientação
@@ -329,7 +340,8 @@ async function start(): Promise<void> {
   };
   document.querySelector('#roll-form')?.addEventListener('submit', (event) => {
     event.preventDefault();
-    startRoll(readRequest());
+    const effects = effectsPanel.triggers();
+    startRoll({ ...readRequest(), ...(effects.length > 0 ? { effects } : {}) });
   });
   document.querySelector('#duality')?.addEventListener('click', () => {
     startRoll({
