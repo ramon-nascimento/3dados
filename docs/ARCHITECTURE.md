@@ -71,6 +71,26 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 - Dados de rolagens anteriores que permanecem na mesa nunca são corpos dinâmicos em uma nova simulação, para não mudarem de face. Hoje eles são removidos quando uma nova rolagem começa.
 - A capacidade depende da área e do tamanho dos dados. Com a recuperação, rolagens densas concluem; em densidades extremas ainda há falhas explícitas e esperas de centenas de milissegundos (números em [BENCHMARKS.md](BENCHMARKS.md)).
 
+## Temas e materiais
+
+Um tema (`ThemeConfig`) é JSON puro, validado e migrado em `customization` ([ADR 0009](adr/0009-temas-e-materiais.md)). O módulo resolve o tema em duas partes independentes:
+
+| Parte                | Função                | Quem consome                                                   |
+| -------------------- | --------------------- | -------------------------------------------------------------- |
+| `ResolvedAppearance` | `resolveAppearance()` | `renderer`: cores, textura, fonte, opacidade, chanfro, emissão |
+| `MaterialPhysics`    | `materialPhysics()`   | `physics`: escalas de atrito e quique, densidade               |
+
+A física não conhece temas, só recebe a resposta do material de cada dado (`SimulationDie.material`). O renderer não conhece física.
+
+No ciclo da rolagem, o tema de cada dado é resolvido **depois** de fixados os valores (passo 1) e não consome o RNG. A pré-simulação e a preparação da aparência (carregar fontes, pintar atlas) correm em paralelo. O material muda a trajetória; a reorientação por simetria e as duas verificações garantem que o valor exibido continua sendo o oficial.
+
+Recursos do renderer:
+
+- **Atlas por aparência.** Para cada par (tipo de dado, aparência) o renderer pinta um canvas de cor (corpo, textura e números) e uma máscara dos números. A máscara alimenta a emissão (números ou corpo) e, invertida, os mapas de metalicidade e transmissão, para que os números não fiquem metálicos nem transparentes.
+- **Texturas procedurais.** Pontilhado, mármore, veios de madeira e pedra são gerados por código (ruído de valor periódico), sem arquivos de imagem. A semente vem do tipo de dado: a mesma aparência produz sempre a mesma textura.
+- **Cache com contagem de referências.** Geometria (por tipo e chanfro) e material (por tipo e aparência) são compartilhados entre dados iguais. Recursos sem uso ficam em uma fila de até 24 antes de serem liberados.
+- **Iluminação.** `MeshPhysicalMaterial` com um ambiente gerado (`RoomEnvironment`, inclinado para não refletir a luz de teto nas faces de cima), luz direcional com sombra e mapeamento de tons neutro.
+
 ## Multiplayer
 
 O motor não é a autoridade dos resultados: recebe os valores oficiais de um servidor externo e garante que a animação os exiba. A sincronização obrigatória é de resultados e estados, não de trajetórias. O contrato de mensagens (proposto em [API.md](API.md)) prevê identificador de rolagem, jogador, sala, sequência, versão de protocolo e visibilidade, com tratamento de duplicatas, mensagens fora de ordem e cancelamentos obsoletos. O backend não faz parte deste projeto.
@@ -89,12 +109,12 @@ Versões e justificativas em [ADR 0005](adr/0005-stack-tecnica.md).
 
 ## Testes
 
-| Pasta               | Ferramenta | Escopo                                           |
-| ------------------- | ---------- | ------------------------------------------------ |
-| `tests/unit`        | Vitest     | Lógica pura, sem GPU nem WASM.                   |
-| `tests/integration` | Vitest     | Módulos com Rapier real, em Node.                |
-| `tests/e2e`         | Playwright | Playground em navegador real.                    |
-| `tests/visual`      | Playwright | Capturas com semente fixa (a partir da Etapa 5). |
+| Pasta               | Ferramenta | Escopo                                   |
+| ------------------- | ---------- | ---------------------------------------- |
+| `tests/unit`        | Vitest     | Lógica pura, sem GPU nem WASM.           |
+| `tests/integration` | Vitest     | Módulos com Rapier real, em Node.        |
+| `tests/e2e`         | Playwright | Playground em navegador real.            |
+| `tests/visual`      | Playwright | Capturas de referência com semente fixa. |
 
 ## Principais riscos
 
@@ -106,7 +126,7 @@ Versões e justificativas em [ADR 0005](adr/0005-stack-tecnica.md).
 | Dados que não estabilizam                    | Rejeição e nova semente fora da tela; recuperação marcada.                          |
 | Peso do Rapier (≈4,3 MB antes de compressão) | Carregamento por `import()` dinâmico; teste de consumo em projeto mínimo.           |
 | Three.js sem versionamento semântico         | Versão exata; uso confinado a `renderer` e `effects`.                               |
-| Vidro e cristal caros em GPU fraca           | Níveis de qualidade.                                                                |
+| Vidro e cristal caros em GPU fraca           | Níveis de qualidade; transmissão só em `high` com bandeja.                          |
 | Autoplay de áudio e licença de sons          | Desbloqueio por gesto; só CC0; síntese procedural como padrão sem arquivos.         |
 | Perda de contexto WebGL e vazamentos         | Recursos de GPU reconstruíveis; teste de memória após `destroy()`.                  |
 | Testes visuais instáveis entre GPUs          | Semente fixa, quadro congelado, tolerância, plataforma de referência única.         |

@@ -4,6 +4,7 @@ import {
   BEVEL,
   DEFAULT_CHAMFER,
   buildDieMeshData,
+  maxChamfer,
   type DieMeshData,
 } from '../../src/renderer/die-mesh-data';
 import { ALL_DICE } from './helpers/dice';
@@ -121,17 +122,57 @@ describe.each(ALL_DICE)('malha do $die.type', ({ die, faces, sidesPerFace }) => 
     }
   });
 
-  it('o chanfro usa só a célula livre do atlas', () => {
+  it('o chanfro usa só a célula livre do atlas, longe das bordas dela', () => {
     const { column, row } = cellOf(faces);
     const bevel = triangles(beveled).filter(({ tag }) => tag === BEVEL);
+    const margin = 0.1 - 1e-6;
 
     expect(bevel.length).toBeGreaterThan(0);
+    const distinct = new Set<string>();
     for (const { corners } of bevel) {
       for (const { uv } of corners) {
-        expect(uv[0]).toBeCloseTo((column + 0.5) / columns, 6);
-        expect(uv[1]).toBeCloseTo(1 - (row + 0.5) / rows, 6);
+        const x = uv[0] * columns - column;
+        const y = row + 1 - (1 - uv[1]) * rows;
+        expect(x).toBeGreaterThanOrEqual(margin);
+        expect(x).toBeLessThanOrEqual(1 - margin);
+        expect(y).toBeGreaterThanOrEqual(margin);
+        expect(y).toBeLessThanOrEqual(1 - margin);
+        distinct.add(uv.map((n) => n.toFixed(4)).join(','));
       }
     }
+    // A posição é projetada na célula: com textura, o padrão continua pelas arestas.
+    expect(distinct.size).toBeGreaterThan(faces);
+  });
+
+  it('o chanfro padrão cabe na geometria e o limite protege dados pequenos', () => {
+    expect(maxChamfer(die)).toBeGreaterThanOrEqual(DEFAULT_CHAMFER);
+    const huge = buildDieMeshData(die, 10);
+    const limited = buildDieMeshData(die, maxChamfer(die));
+    expect(huge.positions).toEqual(limited.positions);
+  });
+
+  it.each([0.025, 0.12])('com chanfro %s, a malha é fechada e fica dentro do sólido', (chamfer) => {
+    const data = buildDieMeshData(die, chamfer);
+    const key = (p: Point) => p.map((n) => Math.round(n * 1e4)).join(',');
+    const edges = new Map<string, number>();
+    for (const { corners } of triangles(data)) {
+      for (let i = 0; i < 3; i++) {
+        const pair = [key(corners[i]!.position), key(corners[(i + 1) % 3]!.position)]
+          .sort()
+          .join('|');
+        edges.set(pair, (edges.get(pair) ?? 0) + 1);
+      }
+      for (const face of die.faces) {
+        const n = faceNormal(die, face);
+        const c = faceCentroid(die, face);
+        for (const { position } of corners) {
+          const distance =
+            (position[0] - c.x) * n.x + (position[1] - c.y) * n.y + (position[2] - c.z) * n.z;
+          expect(distance).toBeLessThan(1e-5);
+        }
+      }
+    }
+    expect([...edges.values()].every((count) => count === 2)).toBe(true);
   });
 
   it('o chanfro recua cada face da largura pedida', () => {

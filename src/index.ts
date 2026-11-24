@@ -25,6 +25,29 @@ export type { Quat, Vec3 } from './core/math';
 export { DiceEngine } from './integration/engine';
 export type { DiceEngineOptions, RollHandle, TableDie } from './integration/engine';
 
+export type { Presentation, QualitySetting, RenderQuality } from './renderer/dice-renderer';
+
+export {
+  DEFAULT_THEME,
+  MATERIAL_PRESETS,
+  MATERIALS,
+  TEXTURES,
+  THEME_SCHEMA_VERSION,
+  parseTheme,
+  serializeTheme,
+} from './customization';
+export type {
+  EmissiveTarget,
+  MaterialAppearance,
+  MaterialKind,
+  MaterialPhysics,
+  MaterialPreset,
+  TextureKind,
+  ThemeColors,
+  ThemeConfig,
+  ThemeEmissive,
+} from './customization';
+
 export type { PhysicsConfig } from './physics/config';
 
 export { createCryptoRandomSource, createSeededRandomSource } from './core/random';

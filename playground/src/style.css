@@ -240,3 +240,121 @@ button:focus-visible {
     border-top: 1px solid var(--border);
   }
 }
+
+select,
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+}
+
+input[type='color'] {
+  height: 34px;
+  padding: 2px;
+}
+
+input[type='checkbox'] {
+  width: auto;
+}
+
+input[type='range'] {
+  padding: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.colors {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+label.inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.numeric {
+  display: grid;
+  gap: 6px;
+}
+
+.numeric-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.numeric-row output {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.emissive {
+  margin: 0;
+  padding: 8px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.emissive-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+}
+
+/* O seletor "Onde" ocupa a linha inteira: o painel é estreito. */
+.emissive-row > label:last-child {
+  grid-column: 1 / -1;
+}
+
+.emissive-row > label,
+.colors > label {
+  min-width: 0;
+}
+
+.emissive legend {
+  padding: 0 4px;
+}
+
+.file-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.file-button input {
+  display: none;
+}
+
+.hint[data-state='ok'] {
+  color: var(--ok);
+}
+
+.hint[data-state='bad'] {
+  color: var(--bad);
+}

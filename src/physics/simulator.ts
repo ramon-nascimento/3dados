@@ -22,9 +22,24 @@ export interface SimulationArea {
   depth: number;
 }
 
+/**
+ * Como o material de um dado responde na simulação. A física não conhece
+ * temas: quem monta o pedido traduz o material nestes números.
+ */
+export interface DieMaterialResponse {
+  /** Multiplica `PhysicsConfig.friction`. */
+  frictionScale: number;
+  /** Multiplica `PhysicsConfig.restitution`; o resultado fica abaixo de 1. */
+  restitutionScale: number;
+  /** Densidade relativa (1 = plástico). Só pesa nas colisões entre dados. */
+  density: number;
+}
+
 export interface SimulationDie {
   dieId: DieId;
   definition: DieDefinition;
+  /** Ausente: plástico, com os valores de `PhysicsConfig`. */
+  material?: DieMaterialResponse;
 }
 
 export interface SimulationRequest {
@@ -107,6 +122,8 @@ const SPAWN_HEIGHT = 2;
 /** Distância do centro à parede a partir da qual o lançamento usa a velocidade cheia. */
 const REFERENCE_REACH = 13;
 const MIN_REPORTED_INTENSITY = 0.01;
+/** Teto da restituição de um dado: acima de 1 ele ganharia energia a cada quique. */
+const MAX_RESTITUTION = 0.95;
 
 function randomUnitQuat(rng: RandomSource): Quat {
   const u1 = randomFloat(rng);
@@ -275,7 +292,7 @@ export class PhysicsSimulator {
         halfDepth - wallMargin - Math.abs(dirX) * halfRow,
       );
 
-      const bodies = request.dice.map(({ definition }, index) => {
+      const bodies = request.dice.map(({ definition, material }, index) => {
         const hull = R.ColliderDesc.convexHull(this.pointsOf(definition));
         if (!hull) {
           throw new DiceError(
@@ -330,8 +347,11 @@ export class PhysicsSimulator {
         );
         const collider = world.createCollider(
           hull
-            .setFriction(config.friction)
-            .setRestitution(config.restitution)
+            .setFriction(config.friction * (material?.frictionScale ?? 1))
+            .setRestitution(
+              Math.min(config.restitution * (material?.restitutionScale ?? 1), MAX_RESTITUTION),
+            )
+            .setDensity(material?.density ?? 1)
             .setActiveEvents(R.ActiveEvents.COLLISION_EVENTS),
           body,
         );

@@ -8,6 +8,8 @@ export type DiceErrorCode =
   | 'UNKNOWN_DIE_TYPE'
   /** Definição de dado personalizado inválida (geometria, faces ou leitura ambígua). */
   | 'INVALID_DIE_DEFINITION'
+  /** Tema inválido: formato, campos, valores fora da faixa ou versão não suportada. */
+  | 'INVALID_THEME'
   /** A simulação não convergiu dentro do orçamento de tentativas. */
   | 'SIMULATION_FAILED'
   /** O valor exibido divergiu do valor oficial. Nunca é silenciado. */

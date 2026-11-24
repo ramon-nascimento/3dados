@@ -453,7 +453,7 @@ A prioridade é construir uma fundação técnica sólida para um sistema de rol
 
 ## O que mudou ou foi decidido depois
 
-A seção 19 já foi cumprida: o plano foi apresentado e aprovado, e as Etapas 1 a 4 estão concluídas.
+A seção 19 já foi cumprida: o plano foi apresentado e aprovado, e as Etapas 1 a 5 estão concluídas.
 
 Decisões tomadas pelo responsável pelo projeto, que complementam a especificação:
 
@@ -461,6 +461,7 @@ Decisões tomadas pelo responsável pelo projeto, que complementam a especifica�
 - Documentação em **PT-BR**; identificadores e nomes de API em inglês.
 - Apresentação padrão em **overlay transparente** sobre o conteúdo do VTT; bandeja visível como opção.
 - A face "0" do d10 rolado sozinho vale **10**.
+- Aparência padrão: plástico marfim com números grafite. Fonte dos números incluída (Atkinson Hyperlegible Next, OFL). Texturas geradas por código.
 
 Onde a implementação detalhou ou se afastou do texto acima:
 
@@ -472,4 +473,6 @@ Onde a implementação detalhou ou se afastou do texto acima:
 | 6     | Orientar a posição final no modo controlado  | A simulação roda inteira antes de aparecer; a malha é girada por uma simetria do poliedro desde o primeiro quadro. | [ADR 0003](adr/0003-pre-simulacao-gravada.md), [0004](adr/0004-reorientacao-por-simetria.md) |
 | 6     | Recuperação quando a simulação não convergir | Empurrão dentro da própria simulação; lançamento dirigido para dados sem simetria.                                 | [ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)                                    |
 | 5     | d100 por dois d10                            | Dado composto: dezenas e unidades, com o total e cada parte no resultado.                                          | [ADR 0007](adr/0007-numeracao-e-leitura-dos-dados.md)                                        |
+| 7     | Formato geométrico como propriedade do tema  | Largura do chanfro (`bevel`). A forma vem do tipo do dado; a aparência não pode mudar física nem leitura.          | [ADR 0009](adr/0009-temas-e-materiais.md)                                                    |
+| 7     | Materiais com parâmetros físicos coerentes   | Atrito, quique e densidade por material, com efeito moderado medido; mudam a trajetória, nunca o valor.            | [ADR 0009](adr/0009-temas-e-materiais.md)                                                    |
 | 4     | Componentes independentes                    | Um pacote único com módulos internos e fronteiras impostas por lint.                                               | [ADR 0001](adr/0001-pacote-unico-com-fronteiras.md)                                          |

@@ -4,6 +4,35 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.5.0] — 2026-11-24
+
+Etapa 5 — Materiais e temas.
+
+### Adicionado
+
+- Temas: `ThemeConfig` versionado (`schemaVersion: 1`), `parseTheme`, `serializeTheme`, `engine.registerTheme`, `engine.setDefaultTheme` e `engine.getTheme`. `DieSpec.theme` passa a ter efeito.
+- Seis materiais (plástico, madeira, pedra, metal, vidro e cristal), cada um com aparência própria e parâmetros físicos: escala de atrito, escala de quique e densidade. `MATERIAL_PRESETS` expõe os valores.
+- Propriedades de tema: cores principal, secundária e dos números, tipografia, textura, opacidade, rugosidade, metalicidade, emissão (nos números ou no corpo) e largura do chanfro.
+- Texturas geradas por código: pontilhado, mármore, veios de madeira e pedra.
+- Fonte dos números incluída no pacote: Atkinson Hyperlegible Next (OFL 1.1), 12,7 KB.
+- Opções `presentation` (`overlay` ou `tray`) e `quality` (`auto`, `low`, `medium` ou `high`) de `DiceEngine.create`, e `engine.quality`.
+- Código de erro `INVALID_THEME`.
+- Iluminação com mapa de ambiente gerado (`RoomEnvironment`), necessária para metal, vidro e cristal.
+- Capturas de referência por material (`tests/visual`).
+- Playground: painel de personalização (editar, salvar no navegador, exportar e importar JSON), seletor de tema da rolagem, botão de Esperança e Medo e painel de exibição.
+
+### Alterado
+
+- Aparência padrão: plástico marfim com números grafite, no lugar do vermelho provisório.
+- O renderer compartilha geometria e materiais entre dados iguais e libera os que deixam de ser usados.
+- `npm run bench` mostra a saída das medições (`--silent=false`) e aceita `BENCH_MATERIALS`.
+
+### Limitações conhecidas
+
+- Vidro e cristal só usam transmissão com `presentation: 'tray'` e `quality: 'high'`; nos demais casos, transparência comum.
+- As capturas de referência são por sistema operacional e geradas com WebGL por software.
+- Fontes de tema precisam ser carregadas pela aplicação.
+
 ## [0.4.0] — 2026-11-24
 
 Etapa 4 — Resultados controlados e recuperação.

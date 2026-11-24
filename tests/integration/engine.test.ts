@@ -18,12 +18,15 @@ import { createPhysicsSimulator, type SimulationResult } from '../../src/physics
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 class FakeRenderer implements EngineRenderer {
   readonly area = { width: 26, depth: 15 };
+  readonly quality = 'high';
   readonly dice = new Map<string, { position: Vec3; rotation: Quat }>();
   loop: (() => void) | undefined;
   disposed = false;
   /** Quando definido, simula uma malha que exibe uma orientação diferente da pedida. */
   corruptRotation: Quat | undefined;
 
+  async prepare(): Promise<void> {}
+  setDieAppearance(): void {}
   addDie(dieId: string): void {
     this.dice.set(dieId, { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0, w: 1 } });
   }

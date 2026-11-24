@@ -32,13 +32,26 @@ import type {
   RollOutcome,
   RollRequest,
 } from '../core/types';
+import {
+  DEFAULT_THEME,
+  materialPhysics,
+  parseTheme,
+  resolveAppearance,
+  type ResolvedAppearance,
+  type ThemeConfig,
+} from '../customization';
 import type { PhysicsConfig } from '../physics/config';
 import {
   createPhysicsSimulator,
   type SimulationRequest,
   type SimulationResult,
 } from '../physics/simulator';
-import { DiceRenderer } from '../renderer/dice-renderer';
+import {
+  DiceRenderer,
+  type Presentation,
+  type QualitySetting,
+  type RenderQuality,
+} from '../renderer/dice-renderer';
 
 export interface DiceEngineOptions {
   /** Tamanho aproximado de um dado na tela, em pixels CSS. Padrão: 72. */
@@ -49,6 +62,15 @@ export interface DiceEngineOptions {
   physics?: Partial<PhysicsConfig>;
   /** Fonte dos valores no modo autônomo. Padrão: `crypto.getRandomValues`. */
   rng?: RandomSource;
+  /** `overlay` (padrão): canvas transparente. `tray`: bandeja visível. */
+  presentation?: Presentation;
+  /**
+   * Custo de GPU. `auto` (padrão) usa `high`, ou `low` quando o WebGL é por
+   * software. Só `high` usa transmissão em vidro e cristal.
+   */
+  quality?: QualitySetting;
+  /** Tema padrão. É registrado e passa a valer para dados sem `theme`. */
+  theme?: ThemeConfig;
 }
 
 /** Controle de uma rolagem em andamento. */
@@ -63,7 +85,12 @@ export interface RollHandle {
 /** O que o motor precisa de um renderer. Implementado por `DiceRenderer`. */
 export interface EngineRenderer {
   readonly area: { width: number; depth: number };
-  addDie(dieId: DieId, definition: DieDefinition): void;
+  /** Qualidade efetiva do render. */
+  readonly quality: RenderQuality;
+  /** Carrega o que as aparências precisam (fontes) antes de os dados aparecerem. */
+  prepare(appearances: readonly ResolvedAppearance[]): Promise<void>;
+  addDie(dieId: DieId, definition: DieDefinition, appearance: ResolvedAppearance): void;
+  setDieAppearance(dieId: DieId, definition: DieDefinition, appearance: ResolvedAppearance): void;
   removeDie(dieId: DieId): void;
   setDieTransform(dieId: DieId, position: Vec3, rotation: Quat): void;
   getDieRotation(dieId: DieId): Quat;
@@ -88,6 +115,14 @@ export interface TableDie {
 /** O que o motor precisa da física. Implementado por `PhysicsSimulator`. */
 export interface EngineSimulator {
   simulate(request: SimulationRequest): Promise<SimulationResult>;
+}
+
+/** Um dado na mesa, com o que é preciso para redesenhá-lo se o tema mudar. */
+interface TableEntry {
+  type: DieType;
+  definition: DieDefinition;
+  /** Tema pedido no `DieSpec`; ausente usa o padrão do motor. */
+  themeId: string | undefined;
 }
 
 /** Dependências do motor. Uso interno e em testes; aplicações usam `DiceEngine.create`. */
@@ -151,8 +186,12 @@ function metadataOf(metadata: RollMetadata | undefined): { metadata?: RollMetada
 export class DiceEngine {
   private readonly deps: EngineDependencies;
   private readonly emitter = new TypedEmitter<DiceEventMap>();
-  /** Dados atualmente na cena (identificador → tipo), da rolagem ativa ou da última concluída. */
-  private readonly tableDice = new Map<DieId, DieType>();
+  /** Dados atualmente na cena, da rolagem ativa ou da última concluída. */
+  private readonly tableDice = new Map<DieId, TableEntry>();
+  private readonly themes = new Map<string, ThemeConfig>([[DEFAULT_THEME.id, DEFAULT_THEME]]);
+  private defaultThemeId = DEFAULT_THEME.id;
+  /** Temas pedidos e não registrados, já avisados no console. */
+  private readonly warnedThemes = new Set<string>();
   private active: ActiveRoll | undefined;
   private destroyed = false;
 
@@ -166,20 +205,30 @@ export class DiceEngine {
     container: HTMLElement,
     options: DiceEngineOptions = {},
   ): Promise<DiceEngine> {
+    // Valida o tema antes de criar o contexto WebGL.
+    const theme = options.theme === undefined ? undefined : parseTheme(options.theme);
     const renderer = new DiceRenderer(container, {
       diceSizePx: options.diceSizePx ?? 72,
       maxPixelRatio: options.maxPixelRatio ?? 2,
+      quality: options.quality ?? 'auto',
+      presentation: options.presentation ?? 'overlay',
     });
     try {
       const simulator = await createPhysicsSimulator(options.physics);
       await warmUp(simulator);
-      return new DiceEngine({
+      const engine = new DiceEngine({
         renderer,
         simulator,
         rng: options.rng ?? createCryptoRandomSource(),
         registry: createStandardRegistry(),
         now: () => performance.now(),
       });
+      if (theme) {
+        engine.registerTheme(theme);
+        engine.setDefaultTheme(theme.id);
+      }
+      await renderer.prepare([resolveAppearance(engine.defaultTheme)]);
+      return engine;
     } catch (error) {
       renderer.dispose();
       throw error;
@@ -275,13 +324,54 @@ export class DiceEngine {
   }
 
   /**
+   * Registra um tema, que passa a poder ser pedido em `DieSpec.theme`. Um `id`
+   * já registrado é substituído, e os dados na mesa que o usam são
+   * redesenhados. Lança `DiceError` `INVALID_THEME` se o tema for inválido.
+   *
+   * O tema muda a aparência e a trajetória; nunca o valor de uma rolagem.
+   */
+  registerTheme(theme: ThemeConfig): void {
+    if (this.destroyed) throw new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.');
+    const parsed = parseTheme(theme);
+    this.themes.set(parsed.id, parsed);
+    this.warnedThemes.delete(parsed.id);
+    this.refreshTable();
+  }
+
+  /**
+   * Define o tema dos dados sem `theme` e dos que pedem um tema não
+   * registrado. Lança `DiceError` `INVALID_ARGUMENT` se o tema não existir.
+   */
+  setDefaultTheme(id: string): void {
+    if (this.destroyed) throw new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.');
+    if (!this.themes.has(id)) {
+      throw new DiceError('INVALID_ARGUMENT', `Tema não registrado: "${id}".`, {
+        details: { id, known: [...this.themes.keys()] },
+      });
+    }
+    this.defaultThemeId = id;
+    this.refreshTable();
+  }
+
+  /** Cópia de um tema registrado, ou `undefined`. */
+  getTheme(id: string): ThemeConfig | undefined {
+    const theme = this.themes.get(id);
+    return theme === undefined ? undefined : parseTheme(theme);
+  }
+
+  /** Qualidade efetiva do render, depois de resolver `auto`. */
+  get quality(): RenderQuality {
+    return this.deps.renderer.quality;
+  }
+
+  /**
    * Dados físicos presentes na mesa, com a posição e a orientação reais das
    * malhas neste instante. Serve para posicionar elementos da aplicação junto
    * aos dados e para conferir, de fora, o que está sendo exibido.
    */
   getDiceOnTable(): TableDie[] {
     if (this.destroyed) return [];
-    return [...this.tableDice].map(([dieId, type]) => ({
+    return [...this.tableDice].map(([dieId, { type }]) => ({
       dieId,
       type,
       position: this.deps.renderer.getDiePosition(dieId),
@@ -322,20 +412,36 @@ export class DiceEngine {
       const acceptableFaces = plan.dice.map((die) =>
         acceptableLandings(die.definition, die.targetFace),
       );
-      const simulation = await simulator.simulate({
-        dice: plan.dice.map(({ dieId, definition }) => ({ dieId, definition })),
-        area: renderer.area,
-        seed: plan.seed,
-        ...(acceptableFaces.some((faces) => faces !== undefined) ? { acceptableFaces } : {}),
-      });
+      // O tema entra só depois de os valores estarem decididos (em `planRoll`):
+      // muda a aparência e a resposta física do material, nunca o resultado.
+      const themeIds = this.themeIdsOf(plan);
+      const themes = themeIds.map((id) => this.themeFor(id));
+      const appearances = themes.map(resolveAppearance);
+      const [simulation] = await Promise.all([
+        simulator.simulate({
+          dice: plan.dice.map(({ dieId, definition }, i) => ({
+            dieId,
+            definition,
+            material: materialPhysics(themes[i]!),
+          })),
+          area: renderer.area,
+          seed: plan.seed,
+          ...(acceptableFaces.some((faces) => faces !== undefined) ? { acceptableFaces } : {}),
+        }),
+        renderer.prepare(appearances),
+      ]);
       if (active.finished) return;
 
       const offsets = this.reorient(plan, simulation);
       const { recording } = simulation;
 
       plan.dice.forEach((die, i) => {
-        renderer.addDie(die.dieId, die.definition);
-        this.tableDice.set(die.dieId, die.type);
+        renderer.addDie(die.dieId, die.definition, appearances[i]!);
+        this.tableDice.set(die.dieId, {
+          type: die.type,
+          definition: die.definition,
+          themeId: themeIds[i],
+        });
         const start = sampleTrajectory(recording.dice[i]!, 0);
         renderer.setDieTransform(
           die.dieId,
@@ -559,6 +665,57 @@ export class DiceEngine {
       this.active = undefined;
       this.deps.renderer.stopLoop();
     }
+  }
+
+  private get defaultTheme(): ThemeConfig {
+    return this.themes.get(this.defaultThemeId) ?? DEFAULT_THEME;
+  }
+
+  /** Tema pedido por cada dado físico, na ordem do plano. */
+  private themeIdsOf(plan: RollPlan): (string | undefined)[] {
+    const ids: (string | undefined)[] = plan.dice.map(() => undefined);
+    for (const result of plan.results) {
+      for (const index of result.parts) ids[index] = result.theme;
+    }
+    return ids;
+  }
+
+  /**
+   * Tema de um dado. Um tema não registrado cai no padrão, com aviso: a
+   * aparência nunca pode fazer uma rolagem falhar (um cliente remoto pode não
+   * ter o tema que outro jogador usa).
+   */
+  private themeFor(id: string | undefined): ThemeConfig {
+    if (id === undefined) return this.defaultTheme;
+    const theme = this.themes.get(id);
+    if (theme) return theme;
+    if (!this.warnedThemes.has(id)) {
+      this.warnedThemes.add(id);
+      console.warn(
+        `[3dados] Tema "${id}" não registrado; usando o tema padrão "${this.defaultThemeId}".`,
+      );
+    }
+    return this.defaultTheme;
+  }
+
+  /** Redesenha os dados na mesa com os temas atuais. Só aparência: nada se move. */
+  private refreshTable(): void {
+    if (this.tableDice.size === 0) return;
+    const { renderer } = this.deps;
+    const pending = [...this.tableDice].map(([dieId, entry]) => ({
+      dieId,
+      entry,
+      appearance: resolveAppearance(this.themeFor(entry.themeId)),
+    }));
+    void renderer.prepare(pending.map(({ appearance }) => appearance)).then(() => {
+      if (this.destroyed) return;
+      for (const { dieId, entry, appearance } of pending) {
+        // O dado pode ter saído da mesa enquanto as fontes carregavam.
+        if (this.tableDice.get(dieId) !== entry) continue;
+        renderer.setDieAppearance(dieId, entry.definition, appearance);
+      }
+      renderer.render();
+    });
   }
 
   private removeTableDice(): void {

@@ -2,7 +2,7 @@
 
 Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 4 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente, nos modos autônomo e controlado, com verificação do valor exibido e recuperação de rolagens densas. Ainda não há temas, áudio nem efeitos. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 5 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas e temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal). Ainda não há áudio nem efeitos. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 
@@ -23,6 +23,16 @@ const outcome = await engine.roll({ dice: [{ type: 'd20' }, { type: 'd6', count:
 
 // Modo controlado: exibe os valores recebidos de fora.
 engine.roll({ dice: [{ type: 'd100', values: [57] }] });
+
+// Temas: aparência por dado; nunca mudam o valor.
+engine.registerTheme({
+  schemaVersion: 1,
+  id: 'safira',
+  name: 'Safira',
+  material: 'glass',
+  colors: { primary: '#1f4e8c', secondary: '#163a69', numbers: '#f2f6ff' },
+});
+engine.roll({ dice: [{ type: 'd20', theme: 'safira' }] });
 ```
 
 Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
@@ -41,7 +51,7 @@ Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
 | `npm run typecheck`               | Checagem de tipos.                                       |
 | `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.     |
 | `npm test`                        | Testes unitários e de integração (Vitest).               |
-| `npm run test:e2e`                | Testes no navegador (Playwright).                        |
+| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas. |
 | `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).               |
 | `npm run bench`                   | Medições da pré-simulação (não faz parte de `npm test`). |
 | `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).        |

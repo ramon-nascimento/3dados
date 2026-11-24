@@ -5,6 +5,7 @@ import { readFace } from '../../../src/core/face-reading';
 import type { Quat, Vec3 } from '../../../src/core/math';
 import { createSeededRandomSource } from '../../../src/core/random';
 import type { RollOutcome } from '../../../src/core/types';
+import type { ResolvedAppearance } from '../../../src/customization';
 import {
   DiceEngine,
   type EngineRenderer,
@@ -15,13 +16,32 @@ import {
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 export class FakeRenderer implements EngineRenderer {
   area = { width: 26, depth: 15 };
-  readonly dice = new Map<string, { definition: DieDefinition; position: Vec3; rotation: Quat }>();
+  readonly quality = 'high';
+  readonly dice = new Map<
+    string,
+    { definition: DieDefinition; appearance: ResolvedAppearance; position: Vec3; rotation: Quat }
+  >();
+  /** Aparências recebidas em `prepare`, em ordem. */
+  readonly prepared: ResolvedAppearance[][] = [];
   loop: (() => void) | undefined;
   disposed = false;
 
-  addDie(dieId: string, definition: DieDefinition): void {
+  prepare(appearances: readonly ResolvedAppearance[]): Promise<void> {
+    this.prepared.push([...appearances]);
+    return Promise.resolve();
+  }
+  setDieAppearance(
+    dieId: string,
+    _definition: DieDefinition,
+    appearance: ResolvedAppearance,
+  ): void {
+    const die = this.dice.get(dieId)!;
+    this.dice.set(dieId, { ...die, appearance });
+  }
+  addDie(dieId: string, definition: DieDefinition, appearance: ResolvedAppearance): void {
     this.dice.set(dieId, {
       definition,
+      appearance,
       position: { x: 0, y: 0, z: 0 },
       rotation: { x: 0, y: 0, z: 0, w: 1 },
     });

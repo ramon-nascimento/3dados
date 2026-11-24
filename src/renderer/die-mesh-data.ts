@@ -58,6 +58,32 @@ export const BEVEL = 0xffff;
 /** Largura padrão do chanfro, em unidades (1 unidade = aresta de um d6). */
 export const DEFAULT_CHAMFER = 0.06;
 
+/**
+ * Fração do menor raio inscrito das faces que o chanfro pode ocupar. Acima
+ * disso o contorno recuado de uma face pequena se inverteria.
+ */
+const MAX_CHAMFER_FRACTION = 0.4;
+
+/** Maior chanfro que a geometria do dado comporta sem inverter nenhuma face. */
+export function maxChamfer(definition: DieDefinition): number {
+  let smallest = Infinity;
+  for (const face of definition.faces) {
+    const vertices = faceVertices(definition, face);
+    const centroid = faceCentroid(definition, face);
+    vertices.forEach((start, i) => {
+      const end = vertices[(i + 1) % vertices.length]!;
+      const edge = vecSub(end, start);
+      const distance = vecLength(vecCross(edge, vecSub(centroid, start))) / vecLength(edge);
+      smallest = Math.min(smallest, distance);
+    });
+  }
+  return smallest * MAX_CHAMFER_FRACTION;
+}
+
+/** Eixos ortonormais e oblíquos da projeção do chanfro na célula livre. */
+const BEVEL_AXIS_U: Vec3 = { x: 0.8, y: 0.6, z: 0 };
+const BEVEL_AXIS_V: Vec3 = { x: -0.36, y: 0.48, z: 0.8 };
+
 interface FaceFrame {
   normal: Vec3;
   centroid: Vec3;
@@ -77,12 +103,18 @@ interface FaceFrame {
  * lógico ao que é desenhado é só o índice da face. Com `chamfer > 0`, as faces
  * são recuadas e as arestas e os vértices viram faixas com normais
  * interpoladas, o que dá a aparência arredondada. A malha fica sempre dentro
- * do sólido original, que é o que a física usa.
+ * do sólido original, que é o que a física usa. O chanfro pedido é limitado a
+ * {@link maxChamfer}.
+ *
+ * O chanfro usa a célula livre do atlas, projetando a posição de cada ponto
+ * nela: com um tema de cor lisa a célula é uniforme; com textura, o padrão
+ * continua pelas arestas em vez de virar uma mancha de uma cor só.
  */
 export function buildDieMeshData(
   definition: DieDefinition,
-  chamfer: number = DEFAULT_CHAMFER,
+  requestedChamfer: number = DEFAULT_CHAMFER,
 ): DieMeshData {
+  const chamfer = Math.min(requestedChamfer, maxChamfer(definition));
   const faceCount = definition.faces.length;
   const columns = Math.ceil(Math.sqrt(faceCount + 1));
   const rows = Math.ceil((faceCount + 1) / columns);
@@ -133,7 +165,15 @@ export function buildDieMeshData(
     (column + x) / columns,
     1 - (row + 1 - y) / rows,
   ];
-  const blankUv = cellUv(faceCount % columns, Math.floor(faceCount / columns), 0.5, 0.5);
+  const radius = Math.max(...definition.vertices.map(vecLength));
+  /** Ponto do chanfro projetado na célula livre, dentro de uma margem de 10%. */
+  const bevelUv = (point: Vec3): [number, number] =>
+    cellUv(
+      faceCount % columns,
+      Math.floor(faceCount / columns),
+      0.5 + (0.4 * vecDot(point, BEVEL_AXIS_U)) / radius,
+      0.5 + (0.4 * vecDot(point, BEVEL_AXIS_V)) / radius,
+    );
 
   /** Emite um polígono convexo como leque de triângulos, voltado para `outward`. */
   const emit = (
@@ -215,7 +255,12 @@ export function buildDieMeshData(
           inset[b.face]![next(b.face, b.position)]!,
         ],
         [na, na, nb, nb],
-        [blankUv, blankUv, blankUv, blankUv],
+        [
+          inset[a.face]![a.position]!,
+          inset[a.face]![next(a.face, a.position)]!,
+          inset[b.face]![b.position]!,
+          inset[b.face]![next(b.face, b.position)]!,
+        ].map(bevelUv),
         vecAdd(na, nb),
         BEVEL,
       );
@@ -239,13 +284,7 @@ export function buildDieMeshData(
         f = twin.face;
       } while (f !== start && corners.length <= definition.faces.length);
 
-      emit(
-        corners,
-        cornerNormals,
-        corners.map(() => blankUv),
-        cornerNormals.reduce(vecAdd),
-        BEVEL,
-      );
+      emit(corners, cornerNormals, corners.map(bevelUv), cornerNormals.reduce(vecAdd), BEVEL);
     });
   }
 
