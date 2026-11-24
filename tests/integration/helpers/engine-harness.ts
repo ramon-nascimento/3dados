@@ -14,7 +14,7 @@ import {
 
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 export class FakeRenderer implements EngineRenderer {
-  readonly area = { width: 26, depth: 15 };
+  area = { width: 26, depth: 15 };
   readonly dice = new Map<string, { definition: DieDefinition; position: Vec3; rotation: Quat }>();
   loop: (() => void) | undefined;
   disposed = false;
@@ -35,6 +35,9 @@ export class FakeRenderer implements EngineRenderer {
   }
   getDieRotation(dieId: string): Quat {
     return this.dice.get(dieId)!.rotation;
+  }
+  getDiePosition(dieId: string): Vec3 {
+    return this.dice.get(dieId)!.position;
   }
   startLoop(onFrame: () => void): void {
     this.loop = onFrame;
@@ -60,9 +63,10 @@ export class FakeRenderer implements EngineRenderer {
 
 export function createHarness(
   simulator: EngineSimulator,
-  options: { seed?: number; registry?: DieRegistry } = {},
+  options: { seed?: number; registry?: DieRegistry; area?: { width: number; depth: number } } = {},
 ) {
   const renderer = new FakeRenderer();
+  if (options.area) renderer.area = options.area;
   let time = 0;
   const engine = new DiceEngine({
     renderer,

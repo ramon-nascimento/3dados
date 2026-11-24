@@ -24,6 +24,7 @@ const DIE_TYPES: readonly { type: string; initial: number }[] = [
   { type: 'd20', initial: 1 },
   { type: 'd100', initial: 0 },
   { type: 'dF', initial: 0 },
+  { type: 'tijolo', initial: 0 },
 ];
 
 /**
@@ -41,6 +42,22 @@ function createFudgeDie() {
     const axis = Math.abs(face.normal.x) > 0.5 ? 0 : Math.abs(face.normal.y) > 0.5 ? 1 : 2;
     const value = [1, 0, -1][axis]!;
     return { value, id: `f${face.index}`, text: ['+', '', '−'][axis]! };
+  });
+}
+
+/**
+ * Exemplo de dado sem simetria entre todas as faces: um tijolo 1 × 1,6 × 1.
+ * As pontas (valores 1 e 6) não são equivalentes aos lados; para exibi-las o
+ * motor precisa que o dado caia de ponta, o que quase nunca acontece por acaso.
+ */
+function createBrickDie() {
+  const vertices = [-0.5, 0.5].flatMap((x) =>
+    [-0.8, 0.8].flatMap((y) => [-0.5, 0.5].map((z) => ({ x, y, z }))),
+  );
+  const sideValues = [2, 3, 4, 5];
+  return createDieDefinition('tijolo', vertices, (face) => {
+    const value = face.normal.y > 0.5 ? 1 : face.normal.y < -0.5 ? 6 : sideValues.shift()!;
+    return { value, id: String(value) };
   });
 }
 
@@ -94,6 +111,7 @@ const statPresim = byTestId('stat-presim');
 const statAttempts = byTestId('stat-attempts');
 const statCollisions = byTestId('stat-collisions');
 const statDuration = byTestId('stat-duration');
+const statRecovered = byTestId('stat-recovered');
 const rollButton = byTestId<HTMLButtonElement>('roll-button');
 
 /** Cria uma linha (nome, quantidade, valores) por tipo de dado. */
@@ -163,6 +181,7 @@ function showOutcome(outcome: RollOutcome): void {
         })
         .join(' · ');
       statDuration.textContent = `${outcome.durationMs.toFixed(0)} ms`;
+      statRecovered.textContent = String(outcome.dice.filter((die) => die.recovered).length);
       break;
     }
     case 'cancelled':
@@ -183,6 +202,7 @@ function resetReadout(): void {
     statAttempts,
     statCollisions,
     statDuration,
+    statRecovered,
   ]) {
     element.textContent = '—';
   }
@@ -198,12 +218,21 @@ async function start(): Promise<void> {
   try {
     engine = await DiceEngine.create(byTestId('dice-overlay'));
     engine.registerDie(createFudgeDie());
+    engine.registerDie(createBrickDie());
   } catch (error) {
     setStatus(`motor indisponível — ${describeError(error)}`, 'bad');
     rollButton.disabled = true;
     return;
   }
   setStatus('pronto');
+
+  // Acesso para depuração e para os testes de navegador, que leem a orientação
+  // real das malhas e a comparam com o resultado informado.
+  const hooks: { engine: DiceEngine; lastOutcome: RollOutcome | null } = {
+    engine,
+    lastOutcome: null,
+  };
+  Object.assign(window, { __3dados: hooks });
 
   let collisions = 0;
   engine.on('rollStarted', ({ simulation }) => {
@@ -220,7 +249,11 @@ async function start(): Promise<void> {
     collisions = 0;
     resetReadout();
     setStatus('rolando…');
-    void engine.roll(readRequest()).result.then(showOutcome);
+    hooks.lastOutcome = null;
+    void engine.roll(readRequest()).result.then((outcome) => {
+      hooks.lastOutcome = outcome;
+      showOutcome(outcome);
+    });
   });
   document.querySelector('#cancel')?.addEventListener('click', () => {
     engine.cancel();

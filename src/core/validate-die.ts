@@ -2,7 +2,6 @@ import { centroidOf, type DieDefinition, type DieFace, type FaceLabel } from './
 import { DiceError } from './errors';
 import { FLAT_ALIGNMENT_MIN } from './face-reading';
 import { vecCross, vecDot, vecLength, vecNormalize, vecSub, type Vec3 } from './math';
-import { findReorientations } from './symmetry';
 
 function fail(message: string, details?: Record<string, unknown>): never {
   throw new DiceError('INVALID_DIE_DEFINITION', message, details ? { details } : {});
@@ -20,6 +19,28 @@ function toVec3(value: unknown, where: string): Vec3 {
     fail(`${where} precisa ser um vetor {x, y, z} de números finitos.`);
   }
   return { x: value.x as number, y: value.y as number, z: value.z as number };
+}
+
+/** Centro de massa de um sólido convexo homogêneo que contém a origem. */
+function solidCentroid(vertices: readonly Vec3[], faces: readonly DieFace[]): Vec3 {
+  let volume = 0;
+  let x = 0;
+  let y = 0;
+  let z = 0;
+  for (const face of faces) {
+    const [first, ...rest] = face.vertexIndices.map((index) => vertices[index]!);
+    for (let i = 0; i + 1 < rest.length; i++) {
+      const b = rest[i]!;
+      const c = rest[i + 1]!;
+      // Tetraedro formado pela origem e por um triângulo da face.
+      const tetra = vecDot(first!, vecCross(b, c)) / 6;
+      volume += tetra;
+      x += (tetra * (first!.x + b.x + c.x)) / 4;
+      y += (tetra * (first!.y + b.y + c.y)) / 4;
+      z += (tetra * (first!.z + b.z + c.z)) / 4;
+    }
+  }
+  return { x: x / volume, y: y / volume, z: z / volume };
 }
 
 function toLabel(value: unknown, where: string): FaceLabel {
@@ -43,9 +64,9 @@ function toLabel(value: unknown, where: string): FaceLabel {
  * A definição pode vir de JavaScript sem tipos, então nada é presumido.
  *
  * Exige um poliedro convexo, fechado e com a origem no interior, em que toda
- * posição de repouso tem exatamente uma leitura. Enquanto a busca por
- * condições iniciais não existir (Etapa 4), exige também que as rotações de
- * simetria levem qualquer face a qualquer outra.
+ * face é uma posição de repouso estável com exatamente uma leitura, e em que
+ * toda leitura corresponde a alguma posição de repouso. As faces não precisam
+ * ser equivalentes entre si.
  */
 export function validateDieDefinition(input: unknown): DieDefinition {
   if (!isRecord(input)) fail('A definição do dado precisa ser um objeto.');
@@ -183,16 +204,26 @@ export function validateDieDefinition(input: unknown): DieDefinition {
     }
   });
 
-  const definition: DieDefinition = { type, vertices, faces };
-  const reference = faces[0]!;
-  const unreachable = faces.find(
-    (face) => findReorientations(definition, face, reference).length === 0,
-  );
-  if (unreachable) {
-    fail(
-      `O dado "${type}" não tem simetria que leve a face "${unreachable.id}" à face "${reference.id}". Dados assim ainda não são suportados (previsto para a Etapa 4).`,
-      { type, faceId: unreachable.id },
-    );
-  }
-  return definition;
+  // Com tantas leituras quantas posições de repouso, todas distintas e cada
+  // repouso com a sua, toda leitura corresponde a algum repouso.
+
+  // O dado precisa conseguir repousar em cada face: a projeção do centro de
+  // massa tem que cair dentro dela. Senão ele tombaria e a face nunca seria lida.
+  const centerOfMass = solidCentroid(vertices, faces);
+  faces.forEach((face, i) => {
+    const normal = normals[i]!;
+    const points = face.vertexIndices.map((index) => vertices[index]!);
+    const inside = points.every((start, k) => {
+      const end = points[(k + 1) % points.length]!;
+      return vecDot(vecCross(vecSub(end, start), vecSub(centerOfMass, start)), normal) > tolerance;
+    });
+    if (!inside) {
+      fail(
+        `O dado não consegue repousar sobre a face "${face.id}": o centro de massa fica fora dela.`,
+        { type, faceId: face.id },
+      );
+    }
+  });
+
+  return { type, vertices, faces };
 }

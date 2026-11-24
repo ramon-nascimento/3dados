@@ -20,10 +20,10 @@ export type {
 export { createDieDefinition } from './core/polyhedron';
 export type { FaceSpec, HullFace } from './core/polyhedron';
 export type { DieDefinition, DieFace, FaceLabel } from './core/die-definition';
-export type { Vec3 } from './core/math';
+export type { Quat, Vec3 } from './core/math';
 
 export { DiceEngine } from './integration/engine';
-export type { DiceEngineOptions, RollHandle } from './integration/engine';
+export type { DiceEngineOptions, RollHandle, TableDie } from './integration/engine';
 
 export type { PhysicsConfig } from './physics/config';
 

@@ -55,7 +55,7 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 
 1. **Validar** o pedido e fixar o valor-alvo de cada dado: fornecido pela aplicação (modo controlado) ou sorteado pelo RNG interno (modo autônomo).
 2. **Pré-simular** a física inteira fora da tela, com passo fixo e condições iniciais semeadas, gravando posição e rotação a cada passo e a linha do tempo das colisões ([ADR 0003](adr/0003-pre-simulacao-gravada.md)).
-3. **Rejeitar e repetir** com outra semente se algum dado não estabilizou, saiu da área, ficou apoiado ou inclinado, ou estourou o tempo.
+3. **Rejeitar e repetir** com outra semente se algum dado não estabilizou, saiu da área, ficou apoiado ou inclinado, ou estourou o tempo. A partir da terceira tentativa, um dado que para mal recebe um empurrão dentro da simulação em vez de invalidar a rolagem ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 4. **Reorientar por simetria**: aplicar à malha, desde o primeiro quadro, a rotação de simetria do poliedro que coloca a face do valor-alvo onde a face física vai terminar para cima ([ADR 0004](adr/0004-reorientacao-por-simetria.md)).
 5. **Verificar** matematicamente o valor que será exibido.
 6. **Reproduzir** a gravação: o renderer interpola, o áudio e os efeitos consomem a linha do tempo, os eventos são emitidos.
@@ -63,13 +63,13 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 
 ### Limitações conhecidas
 
-- Dados personalizados sem simetria transitiva nas faces não podem ser reorientados. A solução prevista (Etapa 4) é re-simular até obter o valor, com orçamento de tentativas. Até lá, `registerDie` recusa esses dados com erro claro.
-- Se nenhuma semente convergir, a melhor tentativa recebe um tombamento final curto até a face plana mais próxima e o resultado é marcado com `recovered: true`.
+- Dados personalizados sem simetria entre todas as faces só exibem um valor se o corpo cair em uma face equivalente. O motor repete a simulação e, para faces raras, usa um lançamento dirigido, visivelmente mais contido. Com vários desses dados ao mesmo tempo a busca pode se esgotar, e a rolagem falha explicitamente.
+- Um dado que recebeu empurrão corretivo é marcado com `recovered: true`. A rolagem dura mais, porque ele volta a rolar.
 - A orientação inicial do dado é consequência do valor-alvo.
 - Espectadores diferentes não veem necessariamente a mesma trajetória; veem sempre o mesmo resultado.
-- A pré-simulação consome CPU antes do primeiro quadro: de 2 a 12 ms para 1 a 20 dados na máquina de referência, e cerca de 95 ms na primeira rolagem da página. A interface de física é assíncrona para permitir Web Worker sem mudar contratos.
+- A pré-simulação consome CPU antes do primeiro quadro: de 2 a 13 ms para 1 a 20 d6 na máquina de referência, e mais com dados grandes ou mesa cheia. O motor aquece a física ao ser criado para que a primeira rolagem não seja mais lenta que as demais. A interface de física é assíncrona para permitir Web Worker sem mudar contratos.
 - Dados de rolagens anteriores que permanecem na mesa nunca são corpos dinâmicos em uma nova simulação, para não mudarem de face. Hoje eles são removidos quando uma nova rolagem começa.
-- A capacidade depende da área: rolagens densas não convergem e falham explicitamente até existir a recuperação da Etapa 4 (números em [BENCHMARKS.md](BENCHMARKS.md)).
+- A capacidade depende da área e do tamanho dos dados. Com a recuperação, rolagens densas concluem; em densidades extremas ainda há falhas explícitas e esperas de centenas de milissegundos (números em [BENCHMARKS.md](BENCHMARKS.md)).
 
 ## Multiplayer
 

@@ -34,6 +34,8 @@ describe('estatísticas da pré-simulação', () => {
     const rejections = new Map<string, number>();
     let attempts = 0;
     let failures = 0;
+    let recoveredRolls = 0;
+    let recoveredDice = 0;
 
     for (let seed = 1; seed <= RUNS; seed++) {
       try {
@@ -41,6 +43,9 @@ describe('estatísticas da pré-simulação', () => {
         cpu.push(result.cpuTimeMs);
         duration.push(result.recording.stepCount * result.recording.timestep);
         attempts += result.attempts;
+        const nudged = result.recovered.filter(Boolean).length;
+        recoveredDice += nudged;
+        if (nudged > 0) recoveredRolls++;
         for (const reason of result.rejections)
           rejections.set(reason, (rejections.get(reason) ?? 0) + 1);
       } catch {
@@ -57,6 +62,7 @@ describe('estatísticas da pré-simulação', () => {
         `  CPU ms      mediana ${f(percentile(cpu, 0.5))}  p95 ${f(percentile(cpu, 0.95))}  máx ${f(cpu.at(-1) ?? NaN)}`,
         `  duração s   mediana ${f(percentile(duration, 0.5))}  p95 ${f(percentile(duration, 0.95))}  máx ${f(duration.at(-1) ?? NaN)}`,
         `  tentativas  média ${f(attempts / Math.max(cpu.length, 1))}  descartes ${JSON.stringify(Object.fromEntries(rejections))}  falhas ${failures}`,
+        `  recuperação rolagens ${((100 * recoveredRolls) / Math.max(cpu.length, 1)).toFixed(0)}%  dados ${((100 * recoveredDice) / Math.max(cpu.length * count, 1)).toFixed(1)}%`,
       ].join('\n'),
     );
   });

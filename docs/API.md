@@ -4,7 +4,7 @@ A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto
 
 Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
 
-## Disponível hoje (0.3.0)
+## Disponível hoje (0.4.0)
 
 Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
@@ -21,16 +21,17 @@ const engine = await DiceEngine.create(container, {
 });
 ```
 
-`create` insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL.
+`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL.
 
-| Método                      | Efeito                                                                                        |
-| --------------------------- | --------------------------------------------------------------------------------------------- |
-| `roll(request): RollHandle` | Inicia uma rolagem. Nunca lança.                                                              |
-| `cancel(rollId?): boolean`  | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado. |
-| `clear(): void`             | Cancela a rolagem em andamento e remove os dados da mesa.                                     |
-| `on(evento, ouvinte)`       | Registra um ouvinte; devolve a função que o remove.                                           |
-| `registerDie(definition)`   | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                |
-| `destroy(): void`           | Cancela, libera GPU e remove o canvas. A instância não pode ser reutilizada.                  |
+| Método                         | Efeito                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `roll(request): RollHandle`    | Inicia uma rolagem. Nunca lança.                                                              |
+| `cancel(rollId?): boolean`     | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado. |
+| `clear(): void`                | Cancela a rolagem em andamento e remove os dados da mesa.                                     |
+| `on(evento, ouvinte)`          | Registra um ouvinte; devolve a função que o remove.                                           |
+| `registerDie(definition)`      | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                |
+| `getDiceOnTable(): TableDie[]` | Dados físicos na mesa, com a posição e a orientação reais das malhas.                         |
+| `destroy(): void`              | Cancela, libera GPU e remove o canvas. A instância não pode ser reutilizada.                  |
 
 ```ts
 interface RollHandle {
@@ -123,7 +124,7 @@ interface DieResult {
   components?: readonly DieComponentResult[]; // só em dados compostos
   role?: string;
   source: 'predetermined' | 'rng';
-  recovered: boolean; // sempre false até a Etapa 4
+  recovered: boolean; // true se o dado recebeu empurrão corretivo (ver abaixo)
 }
 
 interface DieComponentResult {
@@ -181,13 +182,19 @@ engine.roll({ dice: [{ type: 'dF', count: 4 }] });
 
 Também é possível passar uma `DieDefinition` completa (`{ type, vertices, faces }`). A unidade de comprimento é a aresta de um d6.
 
+As faces não precisam ser equivalentes entre si. Em um dado sem simetria entre todas as faces (um tijolo, uma pirâmide):
+
+- no modo autônomo cada face é sorteada com a mesma probabilidade; a forma não altera as chances;
+- para exibir uma face rara, o motor pode usar um lançamento mais contido, com o dado já voltado para ela;
+- com vários desses dados na mesma rolagem, a busca pode se esgotar e a rolagem falha com `SIMULATION_FAILED`.
+
 `registerDie` lança `DiceError` `INVALID_DIE_DEFINITION`, com a causa na mensagem, se:
 
 - o sólido não for convexo, fechado e com a origem no interior, ou alguma face não for plana;
 - uma face estiver listada em sentido horário (visto de fora);
 - houver identificadores de face repetidos ou duas faces com a mesma direção de leitura;
 - existir uma posição de repouso sem nenhuma leitura apontando para cima (resultado ambíguo);
-- as faces não forem todas equivalentes por rotação (limitação até a Etapa 4);
+- o dado não conseguir repousar em alguma face (o centro de massa cai fora dela);
 - o tipo já estiver registrado.
 
 ### Eventos
@@ -242,10 +249,34 @@ interface PhysicsConfig {
   linearDamping: number; // Padrão 0,02
   angularDamping: number; // Padrão 0,02
   maxAttempts: number; // sementes tentadas antes de falhar. Padrão 12
+  cleanAttempts: number; // primeiras tentativas sem nenhuma intervenção. Padrão 2
+  maxNudges: number; // empurrões corretivos por dado; 0 desliga a recuperação. Padrão 6
+  searchAttempts: number; // orçamento quando há dado sem simetria. Padrão 60
 }
 ```
 
 Os padrões foram calibrados por medição; ver [BENCHMARKS.md](BENCHMARKS.md).
+
+### Recuperação
+
+Uma rolagem só é aceita com todos os dados assentados sobre a mesa. As primeiras `cleanAttempts` tentativas são descartadas ao menor problema. A partir daí, um dado que para inclinado ou sobre outro recebe um empurrão dentro da própria simulação e volta a rolar; no resultado ele vem com `recovered: true`.
+
+O valor exibido continua sendo exatamente o oficial: a recuperação muda a trajetória, nunca o resultado. Detalhes em [ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md).
+
+### Dados na mesa
+
+```ts
+interface TableDie {
+  dieId: string;
+  type: DieType; // tipo do dado físico; no d100, "d100:tens" ou "d100:units"
+  position: Vec3; // centro do dado; a mesa é o plano y = 0
+  rotation: Quat; // orientação real da malha
+}
+
+const dice = engine.getDiceOnTable();
+```
+
+Devolve o estado das malhas no instante da chamada, inclusive durante a animação. Serve para posicionar elementos da aplicação junto aos dados e para conferir, de fora, o que está sendo exibido. As unidades são as do motor: 1 unidade é a aresta de um d6.
 
 ### Fontes de aleatoriedade
 
@@ -263,7 +294,7 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.3.0'
+import { VERSION } from '3dados'; // '0.4.0'
 ```
 
 ## Proposto (ainda não implementado)
@@ -291,7 +322,6 @@ engine.getStats();
 
 | Funcionalidade                                         | Etapa |
 | ------------------------------------------------------ | ----- |
-| Dados personalizados sem simetria, recuperação         | 4     |
 | Temas, `presentation`, `quality`                       | 5     |
 | `audio`                                                | 6     |
 | `effects`                                              | 7     |

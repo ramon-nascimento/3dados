@@ -162,6 +162,12 @@ export class DiceRenderer {
     return { x, y, z, w };
   }
 
+  /** Posição real da malha na cena. */
+  getDiePosition(dieId: DieId): Vec3 {
+    const { x, y, z } = this.meshOf(dieId).position;
+    return { x, y, z };
+  }
+
   /** Chama `onFrame` a cada quadro e redesenha. Sem animação ativa, nada roda. */
   startLoop(onFrame: () => void): void {
     this.onFrame = onFrame;

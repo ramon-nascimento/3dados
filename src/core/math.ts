@@ -129,6 +129,19 @@ export function quatFromBasis(xAxis: Vec3, yAxis: Vec3, zAxis: Vec3): Quat {
   return { w: (m21 - m12) / s, x: (m13 + m31) / s, y: (m23 + m32) / s, z: 0.25 * s };
 }
 
+/** Menor rotação que leva o vetor unitário `from` ao vetor unitário `to`. */
+export function quatFromUnitVectors(from: Vec3, to: Vec3): Quat {
+  const cosine = vecDot(from, to);
+  if (cosine < -1 + 1e-9) {
+    // Opostos: meia-volta em torno de qualquer eixo perpendicular.
+    const helper = Math.abs(from.x) < 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+    const axis = vecNormalize(vecCross(from, helper));
+    return { x: axis.x, y: axis.y, z: axis.z, w: 0 };
+  }
+  const axis = vecCross(from, to);
+  return quatNormalize({ x: axis.x, y: axis.y, z: axis.z, w: 1 + cosine });
+}
+
 /** Interpolação esférica pelo caminho mais curto. */
 export function quatSlerp(a: Quat, b: Quat, t: number): Quat {
   let cos = quatDot(a, b);

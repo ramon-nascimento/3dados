@@ -4,8 +4,10 @@ import { randomInt, type RandomSource } from './random';
 import type { DieId, DieType, DieValueSource, RollId, RollMetadata, RollRequest } from './types';
 
 /**
- * Limite de segurança de dados físicos por rolagem (um d100 conta como dois).
- * É provisório: o valor definitivo sai dos benchmarks da Etapa 9.
+ * Limite de dados físicos por rolagem (um d100 conta como dois). É o maior
+ * valor medido em que os dados maiores (d12, d20) ainda convergem sempre na
+ * área de referência; ver docs/BENCHMARKS.md. O valor definitivo sai dos
+ * benchmarks da Etapa 9.
  */
 export const MAX_DICE_PER_ROLL = 30;
 

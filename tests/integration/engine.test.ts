@@ -36,6 +36,9 @@ class FakeRenderer implements EngineRenderer {
   getDieRotation(dieId: string): Quat {
     return this.corruptRotation ?? this.dice.get(dieId)!.rotation;
   }
+  getDiePosition(dieId: string): Vec3 {
+    return this.dice.get(dieId)!.position;
+  }
   startLoop(onFrame: () => void): void {
     this.loop = onFrame;
   }

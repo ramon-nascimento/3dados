@@ -2,7 +2,7 @@
 
 Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 3 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente, nos modos autônomo e controlado, com verificação do valor exibido. Ainda não há temas, áudio nem efeitos. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 4 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente, nos modos autônomo e controlado, com verificação do valor exibido e recuperação de rolagens densas. Ainda não há temas, áudio nem efeitos. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 

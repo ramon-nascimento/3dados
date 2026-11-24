@@ -1,3 +1,5 @@
+import { D6 } from '../core/dice/d6';
+import { D20 } from '../core/dice/platonic';
 import { createStandardRegistry } from '../core/dice/standard';
 import type { DieDefinition, DieRegistry } from '../core/die-definition';
 import { DiceError, isDiceError } from '../core/errors';
@@ -17,12 +19,13 @@ import {
   type RandomSource,
 } from '../core/random';
 import { generateRollId, planRoll, type RollPlan } from '../core/roll-plan';
-import { findReorientations } from '../core/symmetry';
+import { acceptableLandings, findReorientations } from '../core/symmetry';
 import { finalRotation, sampleTrajectory, type SimulationRecording } from '../core/trajectory';
 import { validateDieDefinition } from '../core/validate-die';
 import type {
   DieId,
   DieResult,
+  DieType,
   RollCancelReason,
   RollId,
   RollMetadata,
@@ -64,10 +67,22 @@ export interface EngineRenderer {
   removeDie(dieId: DieId): void;
   setDieTransform(dieId: DieId, position: Vec3, rotation: Quat): void;
   getDieRotation(dieId: DieId): Quat;
+  getDiePosition(dieId: DieId): Vec3;
   startLoop(onFrame: () => void): void;
   stopLoop(): void;
   render(): void;
   dispose(): void;
+}
+
+/** Um dado físico presente na mesa, como está desenhado neste instante. */
+export interface TableDie {
+  dieId: DieId;
+  /** Tipo do dado físico. Em dados compostos, o da parte (ex.: `d100:tens`). */
+  type: DieType;
+  /** Centro do dado, em unidades (1 unidade = aresta de um d6); a mesa é o plano y = 0. */
+  position: Vec3;
+  /** Orientação real da malha na cena. */
+  rotation: Quat;
 }
 
 /** O que o motor precisa da física. Implementado por `PhysicsSimulator`. */
@@ -89,6 +104,8 @@ interface Playback {
   recording: SimulationRecording;
   /** Rotação de simetria aplicada à malha de cada dado, na ordem do plano. */
   offsets: readonly Quat[];
+  /** Por dado físico, se recebeu empurrão corretivo na simulação. */
+  recovered: readonly boolean[];
   startedAt: number;
   collisionCursor: number;
   settled: boolean[];
@@ -107,6 +124,22 @@ function toDiceError(error: unknown): DiceError {
   return new DiceError('INTERNAL_ERROR', 'Falha inesperada durante a rolagem.', { cause: error });
 }
 
+/**
+ * Roda algumas simulações descartáveis. A primeira execução do WASM e do código
+ * de simulação é muito mais lenta que as seguintes; fazer isso na criação do
+ * motor evita que a primeira rolagem do usuário pague esse custo.
+ */
+async function warmUp(simulator: EngineSimulator): Promise<void> {
+  const dice = [D6, D20, D6, D20].map((definition, i) => ({ dieId: `warm-${i}`, definition }));
+  for (let seed = 1; seed <= 3; seed++) {
+    try {
+      await simulator.simulate({ dice, area: { width: 12, depth: 12 }, seed });
+    } catch {
+      // É só aquecimento: uma simulação que não converge não importa aqui.
+    }
+  }
+}
+
 function metadataOf(metadata: RollMetadata | undefined): { metadata?: RollMetadata } {
   return metadata === undefined ? {} : { metadata };
 }
@@ -118,8 +151,8 @@ function metadataOf(metadata: RollMetadata | undefined): { metadata?: RollMetada
 export class DiceEngine {
   private readonly deps: EngineDependencies;
   private readonly emitter = new TypedEmitter<DiceEventMap>();
-  /** Dados atualmente na cena, da rolagem ativa ou da última concluída. */
-  private readonly tableDice = new Set<DieId>();
+  /** Dados atualmente na cena (identificador → tipo), da rolagem ativa ou da última concluída. */
+  private readonly tableDice = new Map<DieId, DieType>();
   private active: ActiveRoll | undefined;
   private destroyed = false;
 
@@ -138,9 +171,11 @@ export class DiceEngine {
       maxPixelRatio: options.maxPixelRatio ?? 2,
     });
     try {
+      const simulator = await createPhysicsSimulator(options.physics);
+      await warmUp(simulator);
       return new DiceEngine({
         renderer,
-        simulator: await createPhysicsSimulator(options.physics),
+        simulator,
         rng: options.rng ?? createCryptoRandomSource(),
         registry: createStandardRegistry(),
         now: () => performance.now(),
@@ -239,6 +274,21 @@ export class DiceEngine {
     this.deps.registry.register(validated);
   }
 
+  /**
+   * Dados físicos presentes na mesa, com a posição e a orientação reais das
+   * malhas neste instante. Serve para posicionar elementos da aplicação junto
+   * aos dados e para conferir, de fora, o que está sendo exibido.
+   */
+  getDiceOnTable(): TableDie[] {
+    if (this.destroyed) return [];
+    return [...this.tableDice].map(([dieId, type]) => ({
+      dieId,
+      type,
+      position: this.deps.renderer.getDiePosition(dieId),
+      rotation: this.deps.renderer.getDieRotation(dieId),
+    }));
+  }
+
   on<K extends DiceEventName>(eventName: K, listener: Listener<DiceEventMap[K]>): Unsubscribe {
     return this.emitter.on(eventName, listener);
   }
@@ -267,10 +317,16 @@ export class DiceEngine {
     const { plan } = active;
     const { renderer, simulator } = this.deps;
     try {
+      // Dados sem simetria entre todas as faces só exibem o valor pedido se o
+      // corpo cair em certas faces; a simulação repete até acertar.
+      const acceptableFaces = plan.dice.map((die) =>
+        acceptableLandings(die.definition, die.targetFace),
+      );
       const simulation = await simulator.simulate({
         dice: plan.dice.map(({ dieId, definition }) => ({ dieId, definition })),
         area: renderer.area,
         seed: plan.seed,
+        ...(acceptableFaces.some((faces) => faces !== undefined) ? { acceptableFaces } : {}),
       });
       if (active.finished) return;
 
@@ -279,7 +335,7 @@ export class DiceEngine {
 
       plan.dice.forEach((die, i) => {
         renderer.addDie(die.dieId, die.definition);
-        this.tableDice.add(die.dieId);
+        this.tableDice.set(die.dieId, die.type);
         const start = sampleTrajectory(recording.dice[i]!, 0);
         renderer.setDieTransform(
           die.dieId,
@@ -291,6 +347,7 @@ export class DiceEngine {
       active.playback = {
         recording,
         offsets,
+        recovered: simulation.recovered,
         startedAt: this.deps.now(),
         collisionCursor: 0,
         settled: plan.dice.map(() => false),
@@ -425,6 +482,7 @@ export class DiceEngine {
       }
     }
 
+    const recovered = active.playback?.recovered ?? [];
     const dice: DieResult[] = plan.results.map((result) => {
       const parts = result.parts.map((index) => plan.dice[index]!);
       return {
@@ -433,7 +491,7 @@ export class DiceEngine {
         value: result.value,
         faceId: parts.map((part) => part.targetFace.id).join('+'),
         source: result.source,
-        recovered: false,
+        recovered: result.parts.some((index) => recovered[index] === true),
         ...(result.role === undefined ? {} : { role: result.role }),
         // Dados compostos (d100) expõem o resultado de cada dado físico.
         ...(parts.length === 1
@@ -504,7 +562,7 @@ export class DiceEngine {
   }
 
   private removeTableDice(): void {
-    for (const dieId of this.tableDice) this.deps.renderer.removeDie(dieId);
+    for (const dieId of this.tableDice.keys()) this.deps.renderer.removeDie(dieId);
     this.tableDice.clear();
   }
 }

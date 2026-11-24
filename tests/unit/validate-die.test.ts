@@ -236,9 +236,8 @@ describe('validateDieDefinition', () => {
     expect(errorOf(dented).code).toBe('INVALID_DIE_DEFINITION');
   });
 
-  it('rejeita, por enquanto, dados sem simetria entre todas as faces', () => {
-    // Pirâmide de base quadrada: legível em qualquer repouso, mas a base não é
-    // equivalente às faces laterais.
+  it('aceita dados sem simetria entre todas as faces', () => {
+    // Pirâmide de base quadrada: a base não é equivalente às faces laterais.
     const vertices = [
       vec3(1, -0.4, 1),
       vec3(-1, -0.4, 1),
@@ -253,9 +252,39 @@ describe('validateDieDefinition', () => {
       readDirection: vecScale(face.normal, -1),
     }));
 
-    const error = errorOf(pyramid);
+    expect(validateDieDefinition(pyramid).faces).toHaveLength(5);
+  });
+
+  it('rejeita um dado que não consegue repousar em uma de suas faces', () => {
+    // Torre inclinada: base larga e topo minúsculo, deslocado para o lado.
+    // Apoiada no topo, ela tomba.
+    const raw = [
+      vec3(-1, 0, -1),
+      vec3(1, 0, -1),
+      vec3(1, 0, 1),
+      vec3(-1, 0, 1),
+      vec3(2.9, 2, -0.1),
+      vec3(3.1, 2, -0.1),
+      vec3(3.1, 2, 0.1),
+      vec3(2.9, 2, 0.1),
+    ];
+    const center = raw.reduce(
+      (sum, p) => vec3(sum.x + p.x / 8, sum.y + p.y / 8, sum.z + p.z / 8),
+      vec3(0, 0, 0),
+    );
+    const tower = createDieDefinition(
+      'torre',
+      raw.map((p) => vec3(p.x - center.x, p.y - center.y, p.z - center.z)),
+      (face) => ({
+        value: face.index + 1,
+        id: `f${face.index}`,
+        readDirection: vecScale(face.normal, -1),
+      }),
+    );
+
+    const error = errorOf(tower);
 
     expect(error.code).toBe('INVALID_DIE_DEFINITION');
-    expect(error.message).toMatch(/simetria/);
+    expect(error.message).toMatch(/repousar/);
   });
 });

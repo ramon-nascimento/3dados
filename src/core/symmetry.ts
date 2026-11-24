@@ -99,3 +99,35 @@ export function findReorientations(
       vecDot(rotateVector(rotation, target.readDirection), landed.readDirection) > 1 - EPSILON,
   );
 }
+
+const transitivityCache = new WeakMap<DieDefinition, boolean>();
+
+/** `true` se as rotações de simetria levam qualquer face a qualquer outra. */
+export function isFaceTransitive(definition: DieDefinition): boolean {
+  let transitive = transitivityCache.get(definition);
+  if (transitive === undefined) {
+    const reference = definition.faces[0];
+    transitive =
+      reference !== undefined &&
+      definition.faces.every((face) => findReorientations(definition, face, reference).length > 0);
+    transitivityCache.set(definition, transitive);
+  }
+  return transitive;
+}
+
+/**
+ * Faces em que o corpo físico pode terminar para que `target` possa ser
+ * exibida por uma rotação de simetria. `undefined` significa "qualquer face",
+ * que é o caso de todos os dados com faces equivalentes.
+ */
+export function acceptableLandings(
+  definition: DieDefinition,
+  target: DieFace,
+): ReadonlySet<string> | undefined {
+  if (isFaceTransitive(definition)) return undefined;
+  return new Set(
+    definition.faces
+      .filter((face) => findReorientations(definition, target, face).length > 0)
+      .map((face) => face.id),
+  );
+}

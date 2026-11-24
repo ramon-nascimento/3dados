@@ -1,7 +1,15 @@
 import { dieRadius, type DieDefinition, type DieFace } from '../core/die-definition';
 import { DiceError } from '../core/errors';
 import { isFlat, readFace } from '../core/face-reading';
-import { rotateVector, type Quat, type Vec3 } from '../core/math';
+import {
+  WORLD_UP,
+  quatFromUnitVectors,
+  quatMultiply,
+  rotateVector,
+  vecNormalize,
+  type Quat,
+  type Vec3,
+} from '../core/math';
 import { createSeededRandomSource, randomFloat, type RandomSource } from '../core/random';
 import type { CollisionRecord, DieTrajectory, SimulationRecording } from '../core/trajectory';
 import type { DieId } from '../core/types';
@@ -24,6 +32,12 @@ export interface SimulationRequest {
   area: SimulationArea;
   /** Semente das condições iniciais. Cada tentativa deriva a sua. */
   seed: number;
+  /**
+   * Por dado, os identificadores das faces em que ele pode terminar. Usado para
+   * dados sem simetria entre todas as faces, que só conseguem exibir o valor
+   * pedido se caírem em certas faces. Ausente ou `undefined`: qualquer face.
+   */
+  acceptableFaces?: readonly (ReadonlySet<string> | undefined)[];
 }
 
 /** Por que uma tentativa de simulação foi descartada. */
@@ -35,12 +49,19 @@ export type RejectionReason =
   /** Algum dado parou inclinado, sem uma face claramente para cima. */
   | 'tilted'
   /** Algum dado parou sem tocar a mesa (por exemplo, sobre outro dado). */
-  | 'not-on-surface';
+  | 'not-on-surface'
+  /** Algum dado terminou em uma face fora de `acceptableFaces`. */
+  | 'wrong-face';
 
 export interface SimulationResult {
   recording: SimulationRecording;
   /** Face física que terminou para cima, por dado, na ordem do pedido. */
   landedFaces: readonly DieFace[];
+  /**
+   * Por dado, se ele parou inclinado ou sobre outro dado e recebeu ao menos um
+   * empurrão corretivo para terminar assentado.
+   */
+  recovered: readonly boolean[];
   /** Tentativas feitas, incluindo a aceita. */
   attempts: number;
   /** Motivo de descarte de cada tentativa anterior à aceita. */
@@ -50,8 +71,16 @@ export interface SimulationResult {
 }
 
 type Attempt =
-  | { ok: true; recording: SimulationRecording; landedFaces: DieFace[] }
+  | { ok: true; recording: SimulationRecording; landedFaces: DieFace[]; recovered: boolean[] }
   | { ok: false; reason: RejectionReason };
+
+/** Quantas tentativas de busca usam lançamentos comuns antes dos dirigidos. */
+const NATURAL_SEARCH_ATTEMPTS = 6;
+/** Fração do giro e da velocidade de um lançamento comum usada no lançamento dirigido. */
+const DIRECTED_SPIN_SCALE = 0.12;
+const DIRECTED_SPEED_SCALE = 0.45;
+/** Dados a até esta distância influenciam a direção do empurrão corretivo. */
+const NUDGE_NEIGHBOR_RANGE = 2.6;
 
 const WALL_HALF_THICKNESS = 2;
 const WALL_HALF_HEIGHT = 30;
@@ -102,8 +131,19 @@ function clampSymmetric(value: number, limit: number): number {
 
 /**
  * Pré-simulação: roda a física inteira fora da tela e devolve a trajetória
- * gravada. Tentativas com dado que não estabiliza, sai da área, para inclinado
- * ou fora da mesa são descartadas e repetidas com outra semente.
+ * gravada.
+ *
+ * Uma tentativa só é aceita se todos os dados terminam assentados, sobre a
+ * mesa e dentro da área. As primeiras tentativas (`cleanAttempts`) são
+ * descartadas ao menor problema, para que a rolagem saia sem nenhuma
+ * intervenção. A partir daí, um dado que para inclinado ou sobre outro recebe
+ * um empurrão corretivo dentro da própria simulação: é um movimento físico,
+ * gravado como o resto, e o dado fica marcado como recuperado.
+ *
+ * Dados sem simetria entre todas as faces podem precisar terminar em faces
+ * específicas (`acceptableFaces`). As primeiras tentativas usam lançamentos
+ * comuns; se a face é rara demais para sair por acaso, as seguintes usam um
+ * lançamento dirigido, com o dado já voltado para ela e pouco giro.
  */
 export class PhysicsSimulator {
   private readonly rapier: RapierModule;
@@ -123,14 +163,23 @@ export class PhysicsSimulator {
   async simulate(request: SimulationRequest): Promise<SimulationResult> {
     const startedAt = performance.now();
     const rejections: RejectionReason[] = [];
+    // Acertar uma face específica de um dado sem simetria é questão de sorte:
+    // o orçamento de tentativas é maior quando há essa restrição.
+    const searching = request.acceptableFaces?.some((faces) => faces !== undefined) ?? false;
+    const budget = searching
+      ? Math.max(this.config.maxAttempts, this.config.searchAttempts)
+      : this.config.maxAttempts;
 
-    for (let attempt = 0; attempt < this.config.maxAttempts; attempt++) {
+    for (let attempt = 0; attempt < budget; attempt++) {
       const seed = (request.seed + Math.imul(attempt, 0x9e3779b9)) >>> 0;
-      const outcome = this.runAttempt(request, seed);
+      const nudgesPerDie = attempt < this.config.cleanAttempts ? 0 : this.config.maxNudges;
+      const directed = searching && attempt >= NATURAL_SEARCH_ATTEMPTS;
+      const outcome = this.runAttempt(request, seed, nudgesPerDie, directed);
       if (outcome.ok) {
         return {
           recording: outcome.recording,
           landedFaces: outcome.landedFaces,
+          recovered: outcome.recovered,
           attempts: attempt + 1,
           rejections,
           cpuTimeMs: performance.now() - startedAt,
@@ -139,11 +188,9 @@ export class PhysicsSimulator {
       rejections.push(outcome.reason);
     }
 
-    throw new DiceError(
-      'SIMULATION_FAILED',
-      `A simulação não convergiu em ${this.config.maxAttempts} tentativas.`,
-      { details: { rejections, dice: request.dice.length, area: { ...request.area } } },
-    );
+    throw new DiceError('SIMULATION_FAILED', `A simulação não convergiu em ${budget} tentativas.`, {
+      details: { rejections, dice: request.dice.length, area: { ...request.area } },
+    });
   }
 
   private pointsOf(definition: DieDefinition): Float32Array {
@@ -155,7 +202,12 @@ export class PhysicsSimulator {
     return points;
   }
 
-  private runAttempt(request: SimulationRequest, seed: number): Attempt {
+  private runAttempt(
+    request: SimulationRequest,
+    seed: number,
+    nudgesPerDie: number,
+    directed: boolean,
+  ): Attempt {
     const R = this.rapier;
     const config = this.config;
     const rng = createSeededRandomSource(seed);
@@ -238,20 +290,39 @@ export class PhysicsSimulator {
         const jitter = () => (randomFloat(rng) - 0.5) * 2 * SPAWN_JITTER;
         const x = centerX - dirZ * lateral + jitter();
         const z = centerZ + dirX * lateral + jitter();
-        const speed = areaSpeed * (0.55 + 0.7 * randomFloat(rng));
+        let speed = areaSpeed * (0.55 + 0.7 * randomFloat(rng));
         const angle = heading + (randomFloat(rng) - 0.5) * 0.5;
-        const spinAxis = randomUnitVector(rng);
-        const spin = config.throwSpin * (0.6 + 0.8 * randomFloat(rng));
+        let spinAxis = randomUnitVector(rng);
+        let spin = config.throwSpin * (0.6 + 0.8 * randomFloat(rng));
+        let rotation = randomUnitQuat(rng);
+        let lift = (randomFloat(rng) - 0.3) * 6;
+
+        // Lançamento dirigido: o dado sai já voltado para uma das faces em que
+        // precisa terminar, mais devagar e girando quase só em torno do eixo
+        // vertical, o que o mantém nessa face. Só é usado quando lançamentos
+        // comuns não acertaram uma face rara de um dado sem simetria.
+        const wanted = directed ? request.acceptableFaces?.[index] : undefined;
+        const aimIds = wanted ? [...wanted] : [];
+        const aim = definition.faces.find(
+          (face) => face.id === aimIds[Math.floor(randomFloat(rng) * aimIds.length)],
+        );
+        if (aim) {
+          const yaw = 2 * Math.PI * randomFloat(rng);
+          rotation = quatMultiply(
+            { x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) },
+            quatFromUnitVectors(aim.readDirection, WORLD_UP),
+          );
+          spinAxis = vecNormalize({ x: 0.1 * spinAxis.x, y: 1, z: 0.1 * spinAxis.z });
+          spin *= DIRECTED_SPIN_SCALE;
+          speed *= DIRECTED_SPEED_SCALE;
+          lift = 0;
+        }
 
         const body = world.createRigidBody(
           R.RigidBodyDesc.dynamic()
             .setTranslation(x, SPAWN_HEIGHT + layer * spawnSpacing + jitter(), z)
-            .setRotation(randomUnitQuat(rng))
-            .setLinvel(
-              Math.cos(angle) * speed,
-              (randomFloat(rng) - 0.3) * 6,
-              Math.sin(angle) * speed,
-            )
+            .setRotation(rotation)
+            .setLinvel(Math.cos(angle) * speed, lift, Math.sin(angle) * speed)
             .setAngvel({ x: spinAxis.x * spin, y: spinAxis.y * spin, z: spinAxis.z * spin })
             .setLinearDamping(config.linearDamping)
             .setAngularDamping(config.angularDamping)
@@ -304,6 +375,64 @@ export class PhysicsSimulator {
         );
       };
 
+      /** Por que um dado parado não serve como resultado, ou `undefined` se serve. */
+      const problemOf = (i: number): RejectionReason | undefined => {
+        const { definition } = request.dice[i]!;
+        const { body } = bodies[i]!;
+        const rotation = body.rotation();
+        if (!isFlat(readFace(definition, rotation))) return 'tilted';
+        const centerY = body.translation().y;
+        const lowest = Math.min(
+          ...definition.vertices.map((v) => centerY + rotateVector(rotation, v).y),
+        );
+        return Math.abs(lowest) > SURFACE_TOLERANCE ? 'not-on-surface' : undefined;
+      };
+
+      /**
+       * Empurrão corretivo: um pequeno salto com giro, para longe dos dados
+       * vizinhos, que tira o dado de cima de outro ou do apoio em que encostou.
+       */
+      const nudge = (i: number): void => {
+        const { body } = bodies[i]!;
+        const p = body.translation();
+        let awayX = 0;
+        let awayZ = 0;
+        bodies.forEach(({ body: other }, j) => {
+          if (j === i) return;
+          const q = other.translation();
+          const dx = p.x - q.x;
+          const dz = p.z - q.z;
+          const distance = Math.hypot(dx, dz);
+          if (distance > 1e-6 && distance < NUDGE_NEIGHBOR_RANGE) {
+            awayX += dx / (distance * distance);
+            awayZ += dz / (distance * distance);
+          }
+        });
+        // Leve tendência para o centro, para não empurrar o dado contra a parede.
+        const fromCenter = Math.hypot(p.x, p.z);
+        if (fromCenter > 1) {
+          awayX -= (0.25 * p.x) / fromCenter;
+          awayZ -= (0.25 * p.z) / fromCenter;
+        }
+        let length = Math.hypot(awayX, awayZ);
+        if (length < 1e-3) {
+          const angle = 2 * Math.PI * randomFloat(rng);
+          awayX = Math.cos(angle);
+          awayZ = Math.sin(angle);
+          length = 1;
+        }
+        const sideways = 3 + 3 * randomFloat(rng);
+        const hop = Math.sqrt(2 * config.gravity * (0.45 + 0.35 * randomFloat(rng)));
+        const axis = randomUnitVector(rng);
+        const spin = 6 + 6 * randomFloat(rng);
+        body.setLinvel(
+          { x: (awayX / length) * sideways, y: hop, z: (awayZ / length) * sideways },
+          true,
+        );
+        body.setAngvel({ x: axis.x * spin, y: axis.y * spin, z: axis.z * spin }, true);
+      };
+
+      const nudges = new Array<number>(dieCount).fill(0);
       record(0);
       let stepCount = 0;
       let allAtRest = false;
@@ -348,7 +477,17 @@ export class PhysicsSimulator {
             Math.hypot(v.x, v.y, v.z) < REST_LINEAR_SPEED &&
             Math.hypot(w.x, w.y, w.z) < REST_ANGULAR_SPEED;
           restCount[i] = resting ? restCount[i]! + 1 : 0;
-          if (restCount[i] < restSteps) allAtRest = false;
+          if (restCount[i] < restSteps) {
+            allAtRest = false;
+            return;
+          }
+          // Acabou de parar. Se parou mal e ainda pode ser empurrado, continua rolando.
+          if (restCount[i] === restSteps && nudges[i]! < nudgesPerDie && problemOf(i)) {
+            nudge(i);
+            nudges[i]!++;
+            restCount[i] = 0;
+            allAtRest = false;
+          }
         });
       }
 
@@ -358,16 +497,14 @@ export class PhysicsSimulator {
       const trajectories: DieTrajectory[] = [];
       for (let i = 0; i < dieCount; i++) {
         const { dieId, definition } = request.dice[i]!;
-        const { body } = bodies[i]!;
-        const rotation = body.rotation();
-        const reading = readFace(definition, rotation);
-        if (!isFlat(reading)) return { ok: false, reason: 'tilted' };
+        const problem = problemOf(i);
+        if (problem) return { ok: false, reason: problem };
 
-        const centerY = body.translation().y;
-        const lowest = Math.min(
-          ...definition.vertices.map((v) => centerY + rotateVector(rotation, v).y),
-        );
-        if (Math.abs(lowest) > SURFACE_TOLERANCE) return { ok: false, reason: 'not-on-surface' };
+        const reading = readFace(definition, bodies[i]!.body.rotation());
+        const acceptable = request.acceptableFaces?.[i];
+        if (acceptable && !acceptable.has(reading.face.id)) {
+          return { ok: false, reason: 'wrong-face' };
+        }
 
         landedFaces.push(reading.face);
         trajectories.push({
@@ -381,6 +518,7 @@ export class PhysicsSimulator {
       return {
         ok: true,
         landedFaces,
+        recovered: nudges.map((count) => count > 0),
         recording: { timestep: config.timestep, stepCount, dice: trajectories, collisions },
       };
     } finally {

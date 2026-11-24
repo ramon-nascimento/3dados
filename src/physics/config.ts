@@ -27,6 +27,19 @@ export interface PhysicsConfig {
   angularDamping: number;
   /** Quantas sementes tentar antes de falhar com `SIMULATION_FAILED`. */
   maxAttempts: number;
+  /**
+   * Quantas das primeiras tentativas precisam terminar sem nenhuma
+   * intervenção. Depois delas, dados que param inclinados ou sobre outros
+   * recebem empurrões corretivos. Zero permite empurrões desde a primeira.
+   */
+  cleanAttempts: number;
+  /** Máximo de empurrões corretivos por dado em uma tentativa. Zero desliga a recuperação. */
+  maxNudges: number;
+  /**
+   * Orçamento de tentativas quando algum dado sem simetria precisa cair em
+   * faces específicas para exibir o valor pedido.
+   */
+  searchAttempts: number;
 }
 
 /**
@@ -48,4 +61,7 @@ export const DEFAULT_PHYSICS_CONFIG: Readonly<PhysicsConfig> = {
   linearDamping: 0.02,
   angularDamping: 0.02,
   maxAttempts: 12,
+  cleanAttempts: 2,
+  maxNudges: 6,
+  searchAttempts: 60,
 };

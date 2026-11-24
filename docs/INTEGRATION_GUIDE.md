@@ -1,6 +1,6 @@
 # Guia de integração
 
-> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados (Etapa 3). Temas, áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
+> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas (Etapa 4). Temas, áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
 
 ## Papéis
 
@@ -93,8 +93,16 @@ Cada cliente anima a própria trajetória. O que é igual para todos é o result
 - `completed`: os valores em `dice` são os exibidos.
 - `cancelled`: `reason` diz por quê (`caller`, `superseded`, `cleared`, `destroyed`).
 - `failed`: `error.code` diz o que houve. Os dois casos que merecem tratamento próprio:
-  - `SIMULATION_FAILED`: dados demais para a área disponível. Reduza a quantidade, aumente o elemento ou diminua `diceSizePx`.
+  - `SIMULATION_FAILED`: dados demais para a área disponível, ou vários dados sem simetria precisando de faces raras ao mesmo tempo. Reduza a quantidade, aumente o elemento ou diminua `diceSizePx`.
   - `RESULT_MISMATCH`: o motor não conseguiu garantir o valor na tela e removeu os dados. Mostre o resultado oficial por outro meio.
+
+## Recuperação
+
+Em rolagens com muitos dados, alguns podem parar inclinados ou sobre outros. O motor lhes dá um empurrão e eles voltam a rolar até assentar. No resultado, esses dados vêm com `recovered: true`. Não é preciso tratar o campo: o valor é o oficial de qualquer forma. Ele serve para diagnóstico, por exemplo para perceber que a área está pequena para a quantidade de dados.
+
+## Elementos junto aos dados
+
+`engine.getDiceOnTable()` devolve a posição e a orientação de cada dado na mesa, nas unidades do motor (1 unidade é a aresta de um d6, e a área visível é centrada na origem). Com `diceSizePx` de 72, uma unidade corresponde a cerca de 72 px.
 
 ## Ciclo de vida
 
@@ -144,7 +152,7 @@ O d10 sozinho vai de 1 a 10: a face "0" vale 10.
 
 ## Dados personalizados
 
-Registre o dado uma vez e peça-o pelo tipo. A definição precisa de um sólido convexo em que todas as faces sejam equivalentes por rotação; os detalhes e os motivos de rejeição estão em [API.md](API.md#dados-personalizados).
+Registre o dado uma vez e peça-o pelo tipo. A definição precisa de um sólido convexo que consiga repousar em cada uma de suas faces; os detalhes e os motivos de rejeição estão em [API.md](API.md#dados-personalizados). As faces não precisam ser equivalentes, mas dados sem simetria têm as ressalvas descritas lá.
 
 ```ts
 import { createDieDefinition } from '3dados';

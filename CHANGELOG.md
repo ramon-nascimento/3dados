@@ -4,6 +4,30 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.4.0] — 2026-11-24
+
+Etapa 4 — Resultados controlados e recuperação.
+
+### Adicionado
+
+- Recuperação: um dado que para inclinado ou sobre outro recebe um empurrão dentro da simulação e volta a rolar, em vez de invalidar a rolagem. `DieResult.recovered` indica os dados empurrados.
+- Dados personalizados sem simetria entre todas as faces: a simulação repete até o dado cair em uma face compatível e, para faces raras, usa um lançamento dirigido.
+- `engine.getDiceOnTable()`: posição e orientação reais de cada dado na mesa.
+- `PhysicsConfig`: `cleanAttempts`, `maxNudges` e `searchAttempts`.
+- Testes de navegador que leem a orientação real das malhas e conferem, fora do motor, o valor exibido.
+- Playground: dado sem simetria de exemplo (tijolo) e contagem de dados recuperados.
+
+### Alterado
+
+- `registerDie` deixa de exigir faces equivalentes por rotação e passa a exigir que o dado consiga repousar em cada face.
+- `DiceEngine.create` roda algumas simulações descartáveis para aquecer a física: a primeira rolagem deixa de ser muito mais lenta que as seguintes.
+- `recovered` deixa de ser sempre `false`.
+
+### Limitações conhecidas
+
+- Em densidades extremas (cerca de 3 unidades² por dado) ainda há falhas e esperas de centenas de milissegundos.
+- O lançamento dirigido de dados sem simetria é visivelmente mais contido que um lançamento comum.
+
 ## [0.3.0] — 2026-11-24
 
 Etapa 3 — Dados poliédricos.

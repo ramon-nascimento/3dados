@@ -7,8 +7,8 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | 1     | Fundação               | ✅ Concluída         |
 | 2     | Primeiro d6 funcional  | ✅ Concluída         |
 | 3     | Dados poliédricos      | ✅ Concluída         |
-| 4     | Resultados controlados | Aguardando aprovação |
-| 5     | Materiais e temas      | —                    |
+| 4     | Resultados controlados | ✅ Concluída         |
+| 5     | Materiais e temas      | Aguardando aprovação |
 | 6     | Sonorização            | —                    |
 | 7     | Efeitos visuais        | —                    |
 | 8     | API e integração       | —                    |
@@ -81,17 +81,32 @@ Descobertas desta etapa:
 - **Dados altos eram cortados junto às bordas.** A margem das paredes passou a cobrir o dado mais alto.
 - **Um sólido sem faces opostas não pode ser lido pela face de cima.** A validação recusa esse caso (por exemplo, uma bipirâmide triangular) em vez de aceitar um dado que nunca convergiria.
 
-## Etapa 4 — Resultados controlados
+## Etapa 4 — Resultados controlados ✅
 
-A reorientação por simetria já existe desde a Etapa 2 (validada para o d6). Restam: validação para todos os dados, busca por condições iniciais para dados assimétricos e recuperação quando a simulação não converge.
+Validação para todos os dados, dados sem simetria entre todas as faces e recuperação quando a simulação não converge.
 
-Critérios de aceite:
+| Critério de aceite                                           | Evidência                                                                                                                                                           |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Para cada dado e cada valor, o valor exibido é o pedido      | `tests/integration/all-dice.test.ts` (todos os valores, com física real) e `tests/unit/all-dice.test.ts` (todos os pares de face pedida e face em que o dado caiu). |
+| Teste no navegador lendo a orientação real da malha          | `tests/e2e/mesh-orientation.spec.ts`: lê cada malha da cena e calcula, fora do motor, a face que está para cima.                                                    |
+| Divergência forçada gera `rollFailed`, nunca `rollCompleted` | `tests/integration/engine.test.ts`: malha girada e malha inclinada.                                                                                                 |
+| Rolagens densas que falhavam concluem com `recovered: true`  | `tests/integration/recovery.test.ts`; capacidade medida de novo em [BENCHMARKS.md](BENCHMARKS.md).                                                                  |
+| Limitações documentadas                                      | [ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md) e [ARCHITECTURE.md](ARCHITECTURE.md).                                                                     |
 
-- Para cada dado e cada valor, o valor exibido é o pedido (teste exaustivo).
-- Teste no navegador lendo a orientação real da malha.
-- Divergência forçada gera `rollFailed`, nunca `rollCompleted` (já coberto para o d6).
-- Recuperação: rolagens densas que hoje falham passam a concluir com `recovered: true`; capacidade medida de novo.
-- Limitações documentadas.
+Mudanças em relação ao plano, ambas motivadas por medição:
+
+- **Empurrão em vez de tombamento animado.** O plano previa aproveitar a melhor tentativa e animar o dado até a face plana mais próxima. Isso não respeitaria a física (o dado giraria atravessando o vizinho). No lugar, a simulação dá um empurrão no dado que parou mal e ele volta a rolar.
+- **A busca sozinha não basta para dados sem simetria.** O plano previa repetir a simulação até o dado cair na face certa. Para faces raras isso não converge: um tijolo cai de ponta em cerca de 5% dos lançamentos, e 60 tentativas falhavam. Depois de seis tentativas comuns, o motor passa a lançar o dado já voltado para a face desejada, com pouco giro.
+
+Também entrou nesta etapa `engine.getDiceOnTable()`, necessário para o teste de navegador e útil para posicionar elementos da aplicação junto aos dados.
+
+Descobertas desta etapa:
+
+- **A recuperação resolve os casos realistas.** Com 20 dados em 8×8, as falhas caíram de 145 para 9 em 150 rolagens; com 30 dados em 13×9, de 112 para zero; com 20 d12 em tela cheia, o p95 da espera caiu de 309 ms para 72 ms.
+- **Densidades extremas continuam um limite.** Abaixo de cerca de 3 unidades² por dado ainda há falhas e esperas de centenas de milissegundos.
+- **O limite de 30 dados foi mantido.** 30 d20 convergem sempre na área de referência; 50 d20 falham em 9% das vezes.
+- **A primeira rolagem da página era até dez vezes mais lenta.** Com busca, chegou a 552 ms no navegador. O motor agora aquece a física ao ser criado, e a mesma rolagem leva 69 ms.
+- **O lançamento dirigido é visível.** No tijolo de exemplo ele aparece em um terço das rolagens autônomas. É a principal ressalva para quem criar dados sem simetria.
 
 ## Etapa 5 — Materiais e temas
 
@@ -159,6 +174,7 @@ Critérios de aceite:
 
 Decididas:
 
+- Recuperação por empurrão dentro da simulação e lançamento dirigido para dados sem simetria ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 - Build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)).
 - A face `0` do d10 rolado sozinho vale **10** (2026-11-24). A face continua mostrando "0"; o valor registrado é 10.
 
