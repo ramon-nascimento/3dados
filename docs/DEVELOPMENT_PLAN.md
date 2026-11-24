@@ -9,8 +9,8 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | 3     | Dados poliédricos      | ✅ Concluída         |
 | 4     | Resultados controlados | ✅ Concluída         |
 | 5     | Materiais e temas      | ✅ Concluída         |
-| 6     | Sonorização            | Aguardando aprovação |
-| 7     | Efeitos visuais        | —                    |
+| 6     | Sonorização            | ✅ Concluída         |
+| 7     | Efeitos visuais        | Aguardando aprovação |
 | 8     | API e integração       | —                    |
 | 9     | Otimização e validação | —                    |
 
@@ -18,7 +18,7 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 
 Este documento basta para continuar o projeto em uma sessão nova, sem depender de conversas anteriores.
 
-**Onde estamos.** Etapas 1 a 5 concluídas (versão 0.5.0). A próxima é a **Etapa 6 — Sonorização**, que ainda não foi iniciada e depende de aprovação.
+**Onde estamos.** Etapas 1 a 6 concluídas (versão 0.6.0). A próxima é a **Etapa 7 — Efeitos visuais**, que ainda não foi iniciada e depende de aprovação.
 
 **O que ler, nesta ordem:**
 
@@ -90,7 +90,7 @@ Descobertas desta etapa:
 - **A capacidade depende da área.** Rolagens densas não convergem (os dados param uns sobre os outros) e falham com `SIMULATION_FAILED`. O teto foi fixado em 30 dados por rolagem, o maior valor que convergiu na área de referência; números em [BENCHMARKS.md](BENCHMARKS.md).
 - **Dois defeitos de lançamento corrigidos por medição:** dados podiam nascer sobrepostos perto das paredes (pego por teste), e muitos dados caíam empilhados.
 - **A primeira rolagem da página é mais lenta** (95 ms contra ~5 ms), pelo aquecimento do WASM.
-- **Eventos de colisão são só de início de contato.** O rolar contínuo de um dado não gera eventos; será refinado com o áudio (Etapa 6).
+- **Eventos de colisão são só de início de contato.** O rolar contínuo de um dado não gera eventos. Na Etapa 6 o áudio passou a reconstruir os tombos a partir da trajetória; o evento continua igual.
 
 ## Etapa 3 — Dados poliédricos ✅
 
@@ -179,36 +179,44 @@ Descobertas desta etapa:
 - **O aviso do three 0.187** sobre `PCFSoftShadowMap` (removido): o padrão `PCFShadowMap` é usado.
 - **O vidro precisa de fundo.** Na bandeja, vidro e cristal com transmissão mostram o feltro escuro e ficam escuros; a opacidade do tema passou a pesar só metade na transmissão, e a absorção foi suavizada. Continua mais sóbrio que no overlay.
 
-## Etapa 6 — Sonorização (próxima)
+## Etapa 6 — Sonorização ✅
 
-Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 8 (sistema de áudio) e 13 (painel de áudio).
+Áudio contextual com Web Audio: lançamento, impactos, tombos e estabilização, planejados a partir da gravação; amostras CC0 da Kenney com síntese de reserva; limite de vozes; desbloqueio por gesto; painel de áudio. Decisões em [ADR 0010](adr/0010-audio.md).
 
-**O que construir:**
+| Critério de aceite                           | Evidência                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Nenhum `AudioContext` com o áudio desligado  | `tests/unit/audio.test.ts`: desligado na criação, nenhum contexto, nenhum `fetch` e nenhum ouvinte de gesto, mesmo com gestos e chamadas de `play`. `tests/integration/audio.test.ts`: motor com áudio desligado rola sem criar contexto. `tests/e2e/audio.spec.ts`: com `?audio=off`, o construtor de `AudioContext` instrumentado nunca é chamado, nem depois de cliques e rolagens. |
+| Limite de vozes respeitado com 20 dados      | `tests/integration/audio.test.ts`: 20 dados com física real e limites de 16, 8 e 4 vozes; nenhum instante com mais vozes audíveis que o limite. `tests/e2e/audio.spec.ts`: 3 rolagens de 20 dados no Chromium, contando `start` e `stop` reais das fontes; pico de 16 vozes.                                                                                                           |
+| Mapeamento de intensidade para ganho testado | `tests/unit/audio.test.ts`: curva monotônica, silêncio abaixo de 0,02, faixa de 36 dB, atenuação por dados em movimento e por repetição, limites de ganho e altura das variações.                                                                                                                                                                                                      |
+| `assets/CREDITS.md` completo                 | `tests/unit/credits.test.ts`: todo arquivo de `assets/` está creditado e todo crédito tem arquivo; os sons são exatamente os que o motor carrega; todos CC0, de kenney.nl, com pacote e arquivo de origem.                                                                                                                                                                             |
 
-- Sons de lançamento, colisão, dados rolando, estabilização (quando fizer sentido) e sons especiais para resultados definidos pela aplicação.
-- Som contextual, que considere: material do dado, material da superfície, intensidade da colisão, quantidade de dados em movimento, intervalo entre impactos e volume configurado.
-- Controle de sobreposição (limite de vozes) e variação de volume e de altura para evitar repetição.
-- Respeito à política de autoplay dos navegadores e possibilidade de desligar o áudio por completo.
-- API `engine.audio` (`setEnabled`, `setVolume`, `unlock`) e opção `audio` de `DiceEngine.create`.
-- Painel de áudio no playground: escolher perfis sonoros e testar impactos.
+Além dos critérios:
 
-**Critérios de aceite:**
+- **O áudio não muda o resultado:** com e sem áudio, mesmos valores e trajetórias (integração). As variações usam uma semente derivada da rolagem, nunca o RNG dos valores.
+- **Autoplay:** o contexto só nasce no primeiro gesto (navegador e unidade); `roll()` chamado dentro de um clique também desbloqueia.
+- **Cancelar, limpar, nova rolagem e `destroy`** interrompem os sons; `destroy` fecha o contexto.
+- **Arquivo que não carrega** cai na síntese, com um aviso no console.
+- **Perfil sonoro:** `soundProfile` do tema tem efeito; perfil desconhecido usa o do material e avisa uma vez.
+- **Painel de áudio** no playground: ligar, volume, superfície, impactos de teste por perfil e intensidade, sons especiais, estado, origem dos sons e vozes medidas.
 
-- Nenhum `AudioContext` é criado com o áudio desligado.
-- Limite de vozes respeitado com 20 dados.
-- Mapeamento de intensidade para ganho testado.
-- `assets/CREDITS.md` completo.
+Mudanças em relação ao plano:
 
-**O que já existe e condiciona a etapa:**
+- **Amostras gravadas da Kenney**, por decisão do responsável pelo projeto, e não só síntese. São 37 WAV (1,2 MB) em `assets/sounds/`, convertidos por `scripts/convert-sounds.js`. A síntese ficou como reserva.
+- **Tombos reconstruídos da trajetória**, não de eventos de força do Rapier: a física e as gravações não mudaram. Um tombo é um vértice novo do dado tocando a mesa enquanto ele rola.
+- **API maior que a prevista:** além de `setEnabled`, `setVolume` e `unlock`, há `setSurface`, `play`, `playImpact`, `registerSound` e `getStats`. Os três últimos servem ao painel, aos testes e aos sons de destaque da aplicação.
+- **Código de erro novo**, `ASSET_LOAD_FAILED`, para `registerSound`.
+- **Pré-carga na criação do motor.** Com o áudio ligado, os arquivos são baixados logo e decodificados em paralelo no desbloqueio; sons pedidos antes do banco ficar pronto são agendados assim que ele fica, se não estiverem atrasados demais.
+- **`?audio=off`** no playground, para o teste de navegador sem áudio.
+- **Versão do `package-lock.json`** estava em 0.4.0; corrigida junto com a 0.6.0.
 
-- Decisão tomada: Web Audio API nativa, sem Howler ([ADR 0005](adr/0005-stack-tecnica.md)). Amostras em MP3 ou WAV; Vorbis e Opus não são confiáveis no Safari.
-- A gravação da simulação já traz uma linha do tempo de colisões (`recording.collisions`) e o evento `diceCollided`, com intensidade de 0 a 1. Hoje só há registro do **início** de cada contato: o rolar contínuo de um dado não gera eventos. Sons de rolagem exigem refinar isso, provavelmente com os eventos de força de contato do Rapier.
-- No modo biblioteca do Vite, assets importados são embutidos em base64. Os sons não devem ser importados pelo código: vão como arquivos separados, carregados de uma URL base configurável, com síntese procedural como padrão sem arquivos.
-- Fontes de som já verificadas: Kenney "Impact Sounds" e "Casino Audio" (CC0) e Freesound com filtro CC0. Proibido: Sonniss GDC.
-- `src/audio/` está vazio e só pode importar de `core`.
-- O material de cada dado vem do tema (Etapa 5). `MATERIAL_PRESETS[material].soundProfile` já existe (`plastic`, `wood`, `stone`, `metal`, `glass`, `crystal`), e `ThemeConfig.soundProfile` é aceito e preservado, sem efeito. A física já recebe o material de cada dado (`SimulationDie.material`); o som pode seguir o mesmo caminho.
+Descobertas desta etapa:
 
-## Etapa 7 — Efeitos visuais
+- **A primeira rolagem depois do desbloqueio saía muda:** todos os sons caíam enquanto o banco decodificava. Daí o agendamento adiado e a decodificação paralela (cerca de 186 ms → 117 ms).
+- **Com 20 dados, muitos sons ficam de fora.** No navegador, 3 rolagens de 20 dados tocaram 185 sons e descartaram 270 pelo limite de 16 vozes. Os descartados são os mais fracos, mas o limite é perceptível. Números em [BENCHMARKS.md](BENCHMARKS.md#áudio-etapa-6).
+- **Duas execuções completas de `npm run test:e2e` falharam com páginas paradas em "iniciando…"**, e as quatro seguintes passaram sem mudança. A causa não foi identificada.
+- **O planejamento custa de 0,1 ms (1 dado) a 4 ms (30 dados)** na mediana e roda antes do primeiro quadro.
+
+## Etapa 7 — Efeitos visuais (próxima)
 
 Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 9 (efeitos especiais) e 13 (painel de efeitos).
 
@@ -232,6 +240,7 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 9 (efeitos especiais)
 - `engine.getDiceOnTable()` devolve a posição e a orientação reais de cada dado, e os eventos `diceSettled` e `rollCompleted` marcam os instantes naturais para disparar efeitos.
 - O `WebGLRenderer` foi escolhido em parte por manter `ShaderMaterial` e `EffectComposer` disponíveis ([ADR 0005](adr/0005-stack-tecnica.md)).
 - O laço de render só roda enquanto há animação. Efeitos que duram além da rolagem precisam mantê-lo ativo e liberá-lo ao terminar.
+- O áudio (Etapa 6) mostra um caminho para efeitos ligados à rolagem: um planejador puro lê a gravação (`recording.collisions` e trajetórias) e devolve uma lista com instantes, e o `integration` agenda essa lista e a interrompe ao cancelar, limpar ou destruir ([ADR 0010](adr/0010-audio.md)).
 
 ## Etapa 8 — API e integração
 
@@ -291,28 +300,32 @@ Requisitos: [PROJECT_BRIEF.md](PROJECT_BRIEF.md), seções 14 (desempenho e esta
 
 ## Painéis do playground
 
-| Painel         | Etapa | Situação                                                             |
-| -------------- | ----- | -------------------------------------------------------------------- |
-| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.         |
-| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.    |
-| Áudio          | 6     | —                                                                    |
-| Efeitos        | 7     | —                                                                    |
-| Integração     | 8     | —                                                                    |
-| Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados. |
-| Física         | 9     | —                                                                    |
+| Painel         | Etapa | Situação                                                                                                  |
+| -------------- | ----- | --------------------------------------------------------------------------------------------------------- |
+| Rolagem        | 2–4   | Pronto: tipo, quantidade e valores predeterminados por dado.                                              |
+| Personalização | 5     | Pronto: edição ao vivo, salvar no navegador, exportar e importar.                                         |
+| Áudio          | 6     | Pronto: liga e desliga, volume, superfície, impactos de teste por perfil, sons especiais e vozes medidas. |
+| Efeitos        | 7     | —                                                                                                         |
+| Integração     | 8     | —                                                                                                         |
+| Desempenho     | 9     | Parcial: pré-simulação, tentativas, colisões, duração e recuperados.                                      |
+| Física         | 9     | —                                                                                                         |
 
 ## Pendências conhecidas
 
 Itens observados no caminho que não pertencem a uma etapa específica ou que precisam ser lembrados:
 
 - **Sem integração contínua.** Os testes rodam só localmente. Um workflow no GitHub que rode tipos, lint e testes a cada push não está no plano e depende de decisão.
-- **Campos aceitos e ainda sem efeito:** `visibility` em `metadata` (Etapa 8); `soundProfile` (Etapa 6) e `effects` (Etapa 7) nos temas.
+- **Campos aceitos e ainda sem efeito:** `visibility` em `metadata` (Etapa 8); `effects` (Etapa 7) nos temas.
 - **Capturas visuais por sistema operacional.** Só há referências para Windows, geradas com WebGL por software. Em outro sistema, a primeira execução de `tests/visual` precisa de `--update-snapshots` e de conferência das imagens.
 - **Vidro e cristal na bandeja** ficam escuros sobre o feltro escuro: a transmissão mostra o que está atrás ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - **Capacidade.** Em densidades extremas, abaixo de cerca de 3 unidades² por dado, ainda há falhas explícitas ([BENCHMARKS.md](BENCHMARKS.md)).
 - **Lançamento dirigido visível** em dados sem simetria com faces raras ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 - **Custo do aquecimento** da física na criação do motor não foi medido separadamente.
 - **Um corte de dados nas bordas** foi visto uma vez durante o desenvolvimento, enquanto o servidor de desenvolvimento recarregava dependências, e não foi reproduzido. Uma corrida possível (redimensionar o elemento e rolar no mesmo instante) foi fechada; a causa não foi confirmada.
+- **Qualidade sonora** não é verificável por teste: os testes conferem o que toca, quando e com que ganho, não se soa bem. Precisa de escuta humana em alto-falantes e fones.
+- **Muitos dados, muitos sons descartados.** Com 20 ou mais dados, o limite de 16 vozes deixa de fora a maioria dos impactos fracos ([BENCHMARKS.md](BENCHMARKS.md#áudio-etapa-6)). `maxVoices` vai até 64.
+- **Uma superfície por motor.** O som de todos os dados usa a mesma superfície (`wood` ou `felt`), não o que está sob cada dado.
+- **Falhas intermitentes no `npm run test:e2e`.** Duas execuções completas pararam com páginas em "iniciando…" durante a Etapa 6; as quatro seguintes passaram. A causa não foi identificada.
 - **Medições em uma única máquina.** Todos os números de `BENCHMARKS.md` vêm do mesmo computador.
 
 ## Decisões pendentes
@@ -326,6 +339,7 @@ Itens observados no caminho que não pertencem a uma etapa específica ou que pr
 
 Decididas:
 
+- Áudio: amostras CC0 da Kenney em arquivos separados com síntese de reserva, ligado por padrão (volume 0,8), desbloqueio automático no primeiro gesto, madeira no overlay e feltro na bandeja ([ADR 0010](adr/0010-audio.md)).
 - Temas e materiais: aparência padrão marfim, fonte OFL incluída, texturas procedurais, efeito físico moderado e tema desconhecido com o padrão ([ADR 0009](adr/0009-temas-e-materiais.md)).
 - Recuperação por empurrão dentro da simulação e lançamento dirigido para dados sem simetria ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 - Build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)).

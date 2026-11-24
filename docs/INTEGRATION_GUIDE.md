@@ -1,6 +1,6 @@
 # Guia de integração
 
-> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas e temas com seis materiais (Etapa 5). Áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
+> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas, temas com seis materiais (Etapa 5) e áudio contextual (Etapa 6). Efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
 
 ## Papéis
 
@@ -210,12 +210,49 @@ engine.registerDie(
 engine.roll({ dice: [{ type: 'dF', count: 4 }] });
 ```
 
-## Áudio (previsto)
+## Áudio
 
-Navegadores só liberam áudio após um gesto do usuário. Será preciso chamar `engine.audio.unlock()` dentro de um manipulador de clique ou tecla.
+O áudio vem ligado. Para ouvir as amostras gravadas, sirva a pasta `assets/sounds/` do pacote e informe onde ela está; sem isso, o motor sintetiza os sons.
+
+1. Copie `node_modules/3dados/assets/sounds/` para a pasta pública da aplicação. No Vite, por exemplo, para `public/3dados/sounds/`. No webpack, com um plugin de cópia.
+2. Informe a URL:
+
+```ts
+const engine = await DiceEngine.create(container, {
+  audio: { baseUrl: '/3dados/sounds/' },
+});
+```
+
+**Gesto do usuário.** Navegadores só liberam som depois de um clique ou tecla. O motor cuida disso sozinho (`autoUnlock`, padrão): o primeiro clique na página libera o áudio, e a rolagem disparada por um clique também. Se a aplicação preferir controlar o momento, use `autoUnlock: false` e chame `engine.audio.unlock()` dentro de um manipulador de clique.
+
+**Preferência do jogador.** Ligue e desligue com `engine.audio.setEnabled()` e ajuste com `setVolume()`. Desligado desde a criação (`audio: { enabled: false }`), o motor não cria `AudioContext` nem baixa arquivos.
+
+```ts
+const prefs = JSON.parse(localStorage.getItem('dados') ?? '{}');
+const engine = await DiceEngine.create(container, {
+  audio: { enabled: prefs.som ?? true, volume: prefs.volume ?? 0.8, baseUrl: '/3dados/sounds/' },
+});
+```
+
+**Material e superfície.** O som de cada dado segue o material do tema, ou `soundProfile` quando o tema define um. A superfície é madeira no overlay (a mesa do VTT) e feltro na bandeja; troque com `audio.surface` ou `engine.audio.setSurface()`.
+
+**Sons de destaque.** O motor não sabe o que é um crítico. A aplicação decide e toca um som especial:
+
+```ts
+await engine.audio.registerSound('critico', '/sons/critico.mp3'); // MP3 ou WAV
+
+engine.on('rollCompleted', ({ dice }) => {
+  if (dice.some((die) => die.type === 'd20' && die.value === 20)) engine.audio.play('critico');
+});
+```
+
+`bell` e `thud` já vêm no pacote. Use MP3 ou WAV: Vorbis e Opus não tocam em todo Safari.
+
+**Créditos.** Os sons do pacote são CC0 (Kenney). O crédito não é obrigatório; a lista está em `assets/CREDITS.md`.
 
 ## Empacotamento
 
 - A biblioteca é distribuída como ESM, com declarações de tipos.
 - `three` e `@dimforge/rapier3d-deterministic-compat` são dependências resolvidas pelo bundler da aplicação, não embutidas. A fonte dos números (Atkinson Hyperlegible Next, OFL) vem embutida no pacote. O Rapier (alguns MB) é carregado por `import()` dinâmico, só quando um motor é criado.
+- Os sons (`assets/sounds/`, cerca de 1,2 MB em WAV) vêm no pacote como arquivos, fora do JavaScript. A aplicação os serve e informa `audio.baseUrl` (ver [Áudio](#áudio)).
 - Depois que os recursos locais estão disponíveis, nenhuma conexão com a internet é necessária.

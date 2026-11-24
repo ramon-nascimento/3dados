@@ -453,7 +453,7 @@ A prioridade é construir uma fundação técnica sólida para um sistema de rol
 
 ## O que mudou ou foi decidido depois
 
-A seção 19 já foi cumprida: o plano foi apresentado e aprovado, e as Etapas 1 a 5 estão concluídas.
+A seção 19 já foi cumprida: o plano foi apresentado e aprovado, e as Etapas 1 a 6 estão concluídas.
 
 Decisões tomadas pelo responsável pelo projeto, que complementam a especificação:
 
@@ -462,6 +462,7 @@ Decisões tomadas pelo responsável pelo projeto, que complementam a especifica�
 - Apresentação padrão em **overlay transparente** sobre o conteúdo do VTT; bandeja visível como opção.
 - A face "0" do d10 rolado sozinho vale **10**.
 - Aparência padrão: plástico marfim com números grafite. Fonte dos números incluída (Atkinson Hyperlegible Next, OFL). Texturas geradas por código.
+- Sons: amostras CC0 da Kenney, em arquivos separados do JavaScript. Áudio ligado por padrão (volume 0,8), liberado sozinho no primeiro clique ou tecla. Superfície de madeira no overlay e de feltro na bandeja.
 
 Onde a implementação detalhou ou se afastou do texto acima:
 
@@ -475,4 +476,7 @@ Onde a implementação detalhou ou se afastou do texto acima:
 | 5     | d100 por dois d10                            | Dado composto: dezenas e unidades, com o total e cada parte no resultado.                                          | [ADR 0007](adr/0007-numeracao-e-leitura-dos-dados.md)                                        |
 | 7     | Formato geométrico como propriedade do tema  | Largura do chanfro (`bevel`). A forma vem do tipo do dado; a aparência não pode mudar física nem leitura.          | [ADR 0009](adr/0009-temas-e-materiais.md)                                                    |
 | 7     | Materiais com parâmetros físicos coerentes   | Atrito, quique e densidade por material, com efeito moderado medido; mudam a trajetória, nunca o valor.            | [ADR 0009](adr/0009-temas-e-materiais.md)                                                    |
+| 8     | Sons de colisão, rolagem e estabilização     | Planejados a partir da gravação antes do primeiro quadro; o áudio nunca participa do resultado.                    | [ADR 0010](adr/0010-audio.md)                                                                |
+| 8     | Som dos dados rolando                        | Tombos reconstruídos da trajetória gravada (vértice novo tocando a mesa); a física não mudou.                      | [ADR 0010](adr/0010-audio.md)                                                                |
+| 8     | Banco de amostras                            | Amostras CC0 servidas pela aplicação (`audio.baseUrl`); sem elas, síntese procedural.                              | [ADR 0010](adr/0010-audio.md)                                                                |
 | 4     | Componentes independentes                    | Um pacote único com módulos internos e fronteiras impostas por lint.                                               | [ADR 0001](adr/0001-pacote-unico-com-fronteiras.md)                                          |

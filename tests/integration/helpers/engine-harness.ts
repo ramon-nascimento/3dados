@@ -1,3 +1,4 @@
+import type { DiceAudio } from '../../../src/audio';
 import { createStandardRegistry } from '../../../src/core/dice/standard';
 import type { DieDefinition, DieRegistry } from '../../../src/core/die-definition';
 import type { DiceEventName } from '../../../src/core/events';
@@ -83,7 +84,12 @@ export class FakeRenderer implements EngineRenderer {
 
 export function createHarness(
   simulator: EngineSimulator,
-  options: { seed?: number; registry?: DieRegistry; area?: { width: number; depth: number } } = {},
+  options: {
+    seed?: number;
+    registry?: DieRegistry;
+    area?: { width: number; depth: number };
+    audio?: DiceAudio;
+  } = {},
 ) {
   const renderer = new FakeRenderer();
   if (options.area) renderer.area = options.area;
@@ -94,6 +100,7 @@ export function createHarness(
     rng: createSeededRandomSource(options.seed ?? 11),
     registry: options.registry ?? createStandardRegistry(),
     now: () => time,
+    ...(options.audio ? { audio: options.audio } : {}),
   });
   const events: { name: DiceEventName; payload: unknown }[] = [];
   const names: DiceEventName[] = [

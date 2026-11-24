@@ -50,6 +50,20 @@ export type {
 
 export type { PhysicsConfig } from './physics/config';
 
+export { BUILTIN_SOUNDS, SOUND_PROFILES, SURFACES, intensityToGain } from './audio';
+export type {
+  AudioOptions,
+  AudioState,
+  AudioStats,
+  BuiltinSound,
+  DiceAudioControls,
+  ImpactOptions,
+  PlayOptions,
+  SoundProfile,
+  SoundSource,
+  Surface,
+} from './audio';
+
 export { createCryptoRandomSource, createSeededRandomSource } from './core/random';
 export type { RandomSource } from './core/random';
 

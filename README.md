@@ -2,7 +2,7 @@
 
 Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 5 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas e temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal). Ainda não há áudio nem efeitos. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 6 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal) e áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície). Ainda não há efeitos visuais. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 
@@ -16,7 +16,10 @@ Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convin
 ```ts
 import { DiceEngine } from '3dados';
 
-const engine = await DiceEngine.create(document.querySelector('#dice'));
+const engine = await DiceEngine.create(document.querySelector('#dice'), {
+  // Onde a aplicação serve assets/sounds/ do pacote. Sem isso, os sons são sintetizados.
+  audio: { baseUrl: '/3dados/sounds/' },
+});
 
 // Modo autônomo: o motor sorteia.
 const outcome = await engine.roll({ dice: [{ type: 'd20' }, { type: 'd6', count: 2 }] }).result;
@@ -44,17 +47,17 @@ Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
 
 ## Comandos
 
-| Comando                           | O que faz                                                |
-| --------------------------------- | -------------------------------------------------------- |
-| `npm install`                     | Instala as dependências.                                 |
-| `npm run dev`                     | Abre o playground em `http://localhost:5173`.            |
-| `npm run typecheck`               | Checagem de tipos.                                       |
-| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.     |
-| `npm test`                        | Testes unitários e de integração (Vitest).               |
-| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas. |
-| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).               |
-| `npm run bench`                   | Medições da pré-simulação (não faz parte de `npm test`). |
-| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).        |
+| Comando                           | O que faz                                                  |
+| --------------------------------- | ---------------------------------------------------------- |
+| `npm install`                     | Instala as dependências.                                   |
+| `npm run dev`                     | Abre o playground em `http://localhost:5173`.              |
+| `npm run typecheck`               | Checagem de tipos.                                         |
+| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.       |
+| `npm test`                        | Testes unitários e de integração (Vitest).                 |
+| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas.   |
+| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).                 |
+| `npm run bench`                   | Medições da pré-simulação e do áudio (fora do `npm test`). |
+| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).          |
 
 ## Estrutura
 
@@ -70,7 +73,7 @@ src/            biblioteca (único ponto de entrada: src/index.ts)
 playground/     aplicação de demonstração
 tests/          unit · integration · e2e · visual
 docs/           arquitetura, API, plano, guia de integração, ADRs
-assets/         assets de terceiros e seus créditos
+assets/         assets de terceiros (fonte, sons) e seus créditos
 ```
 
 ## Documentação

@@ -16,6 +16,8 @@ export type DiceErrorCode =
   | 'RESULT_MISMATCH'
   /** Recurso de plataforma indisponível (WebGL, crypto, áudio). */
   | 'UNSUPPORTED_ENVIRONMENT'
+  /** Um arquivo externo (por exemplo, um som) não pôde ser baixado ou decodificado. */
+  | 'ASSET_LOAD_FAILED'
   /** A instância do motor já foi destruída. */
   | 'ENGINE_DESTROYED'
   /** Falha inesperada dentro do motor; `cause` traz o erro original. */

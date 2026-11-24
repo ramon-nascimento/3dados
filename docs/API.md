@@ -4,7 +4,7 @@ A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto
 
 Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
 
-## Disponível hoje (0.5.0)
+## Disponível hoje (0.6.0)
 
 Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
@@ -21,10 +21,11 @@ const engine = await DiceEngine.create(container, {
   presentation: 'overlay', // | 'tray'
   quality: 'auto', // | 'low' | 'medium' | 'high'
   theme: meuTema, // ThemeConfig opcional; vira o tema padrão
+  audio: { baseUrl: '/3dados/sounds/' }, // AudioOptions; ver "Áudio"
 });
 ```
 
-`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL e com `INVALID_THEME` se `theme` for inválido. `presentation`, `quality` e `theme` estão descritos em [Aparência](#aparência) e [Temas](#temas).
+`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `audio` for inválido. `presentation`, `quality`, `theme` e `audio` estão descritos em [Aparência](#aparência), [Temas](#temas) e [Áudio](#áudio).
 
 | Método                         | Efeito                                                                                        |
 | ------------------------------ | --------------------------------------------------------------------------------------------- |
@@ -38,7 +39,8 @@ const engine = await DiceEngine.create(container, {
 | `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.              |
 | `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                  |
 | `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.           |
-| `destroy(): void`              | Cancela, libera GPU e remove o canvas. A instância não pode ser reutilizada.                  |
+| `audio: DiceAudioControls`     | Controles do áudio. Ver [Áudio](#áudio).                                                      |
+| `destroy(): void`              | Cancela, libera GPU, fecha o áudio e remove o canvas. A instância não pode ser reutilizada.   |
 
 ```ts
 interface RollHandle {
@@ -217,7 +219,7 @@ As faces não precisam ser equivalentes entre si. Em um dado sem simetria entre 
 
 - `simulation` é `{ attempts, cpuTimeMs }`: medições reais da pré-simulação daquela rolagem.
 - `other` é `{ kind: 'die', dieId }` ou `{ kind: 'surface' }` (mesa e paredes).
-- `intensity` vai de 0 a 1: variação de velocidade causada pelo impacto, relativa à velocidade de lançamento. Contatos contínuos de um dado rolando não geram eventos; isso será refinado com o áudio, na Etapa 6.
+- `intensity` vai de 0 a 1: variação de velocidade causada pelo impacto, relativa à velocidade de lançamento. Contatos contínuos de um dado rolando não geram eventos. O áudio reconstrói os tombos a partir da trajetória gravada (ver [Áudio](#áudio)); o evento não mudou.
 - Uma exceção lançada por um ouvinte é registrada no console e não interrompe o motor.
 
 ### Erros
@@ -238,6 +240,7 @@ import { DiceError, isDiceError } from '3dados';
 | `SIMULATION_FAILED`       | A simulação não convergiu no orçamento de tentativas. |
 | `RESULT_MISMATCH`         | O valor exibido divergiu do oficial.                  |
 | `UNSUPPORTED_ENVIRONMENT` | Recurso de plataforma indisponível.                   |
+| `ASSET_LOAD_FAILED`       | Um arquivo externo (um som) não carregou.             |
 | `ENGINE_DESTROYED`        | A instância já foi destruída.                         |
 | `INTERNAL_ERROR`          | Falha inesperada; `cause` traz o erro original.       |
 
@@ -353,7 +356,7 @@ interface ThemeConfig {
   emissive?: { color: string; intensity: number; target?: 'numbers' | 'body' }; // intensidade 0–4
   bevel?: number; // largura do chanfro das arestas, 0–0,12; só visual
   effects?: string[]; // reservado para a Etapa 7; preservado, sem efeito
-  soundProfile?: string; // reservado para a Etapa 6; preservado, sem efeito
+  soundProfile?: string; // perfil sonoro; ausente usa o do material (ver Áudio)
 }
 ```
 
@@ -394,6 +397,73 @@ São recusados campos desconhecidos (inclusive dentro de `colors` e `emissive`),
 
 Exportados: `DEFAULT_THEME`, `MATERIAL_PRESETS`, `MATERIALS`, `TEXTURES`, `THEME_SCHEMA_VERSION`, `parseTheme`, `serializeTheme` e os tipos `ThemeConfig`, `ThemeColors`, `ThemeEmissive`, `EmissiveTarget`, `MaterialKind`, `TextureKind`, `MaterialPreset`, `MaterialAppearance`, `MaterialPhysics`, `Presentation`, `QualitySetting` e `RenderQuality`.
 
+### Áudio
+
+```ts
+const engine = await DiceEngine.create(container, {
+  audio: {
+    enabled: true, // padrão: true. Desligado, nenhum AudioContext é criado.
+    volume: 0.8, // 0 a 1
+    baseUrl: '/3dados/sounds/', // pasta onde a aplicação serve assets/sounds/ do pacote
+    surface: 'wood', // | 'felt'. Padrão: 'wood' no overlay, 'felt' na bandeja
+    maxVoices: 16, // sons simultâneos, de 1 a 64
+    autoUnlock: true, // libera o áudio no primeiro clique ou tecla na página
+  },
+});
+
+engine.audio.setEnabled(false);
+engine.audio.setVolume(0.5);
+await engine.audio.unlock(); // dentro de um manipulador de clique ou tecla
+engine.audio.play('bell'); // som especial
+engine.audio.playImpact({ profile: 'metal', intensity: 0.6 }); // impacto avulso
+await engine.audio.registerSound('critico', '/sons/critico.mp3');
+engine.audio.getStats();
+```
+
+| Membro                         | Efeito                                                                                                                                   |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`, `volume`, `surface` | Valores atuais.                                                                                                                          |
+| `state: AudioState`            | `off` (desligado), `locked` (esperando um gesto), `running` ou `unavailable` (sem Web Audio).                                            |
+| `setEnabled(enabled)`          | Liga ou desliga. Desligar interrompe o que estiver tocando. Ligar dentro de um clique já libera o áudio.                                 |
+| `setVolume(volume)`            | Volume geral, de 0 a 1.                                                                                                                  |
+| `setSurface(surface)`          | `wood` ou `felt`. Vale para as próximas rolagens.                                                                                        |
+| `unlock(): Promise<boolean>`   | Libera o áudio; chame dentro de um gesto. Resolve com `true` se está tocando. Com o áudio desligado não cria nada e resolve com `false`. |
+| `play(name, options?)`         | Toca `bell`, `thud` ou um som registrado. `options`: `{ volume?, delayMs? }`. Devolve `false` se o áudio não está tocando.               |
+| `playImpact(options)`          | Impacto avulso: `{ profile, intensity, against?: 'surface' \| 'die' }`. Serve para testar perfis.                                        |
+| `registerSound(name, url)`     | Registra um som especial em MP3 ou WAV. Rejeita com `ASSET_LOAD_FAILED` se o arquivo não baixar.                                         |
+| `getStats(): AudioStats`       | `state`, `activeVoices`, `maxVoices`, `scheduled`, `dropped`, `stolen`, `skipped` e `source` (`samples`, `synth`, `mixed` ou `none`).    |
+
+Opções inválidas lançam `DiceError` `INVALID_ARGUMENT` com o campo na mensagem (`audio.volume: esperado um número de 0 a 1.`). Um nome não registrado em `play` também.
+
+**Política de autoplay.** Navegadores só liberam som depois de um gesto do usuário. Com `autoUnlock` (padrão), o motor escuta o primeiro `pointerdown`, `keydown` ou `touchend` na página e para de escutar quando o áudio é liberado; `roll()` chamado dentro de um clique também libera. Com `autoUnlock: false`, a aplicação chama `engine.audio.unlock()`. Antes disso nenhum som toca, e nenhum erro é lançado.
+
+**Desligado é desligado.** Com `enabled: false` o motor não cria `AudioContext`, não baixa arquivos e não escuta gestos.
+
+**Sons do pacote.** Os 37 sons ficam em `assets/sounds/` do pacote npm (WAV, cerca de 1,2 MB, CC0, créditos em `assets/CREDITS.md`). Eles não estão no JavaScript: a aplicação copia a pasta para o seu servidor e informa a URL em `baseUrl`. Os arquivos são baixados na criação do motor e decodificados no desbloqueio. Sem `baseUrl`, ou para um arquivo que falhar, o som é sintetizado (aviso no console quando algum arquivo falha).
+
+**O que soa em uma rolagem.** Os sons são planejados a partir da simulação gravada, antes de a animação começar, e agendados no relógio do áudio:
+
+- **Lançamento:** o chacoalhar dos dados saindo da mão, mais alto com mais dados.
+- **Impactos:** cada contato registrado pela física (o mesmo de `diceCollided`). Contra a mesa, o som depende da superfície: no feltro é um baque abafado. Entre dados, depende do material.
+- **Tombos:** o dado rolando na mesa, a cada aresta que bate. São reconstruídos da trajetória, sem eventos de física.
+- **Estabilização:** um toque leve quando o dado chega quieto ao repouso.
+
+O ganho cresce com a intensidade em uma escala de 36 dB e é atenuado pela quantidade de dados em movimento e por impactos muito próximos do mesmo dado. A altura e o ganho variam um pouco a cada som. Com o limite de vozes cheio, um som novo só toca no lugar do mais fraco, e se for mais forte que ele. `intensityToGain(intensity)` é exportada.
+
+**Perfil sonoro.** Os perfis são os seis materiais (`SOUND_PROFILES`). O perfil de um dado é `ThemeConfig.soundProfile` ou, sem ele, o do material do tema. Um perfil desconhecido usa o do material, com um aviso no console por perfil.
+
+**O áudio nunca muda um resultado.** O planejamento usa uma semente derivada da rolagem, não o RNG dos valores, e uma falha nele vira aviso no console, sem afetar a rolagem. Cancelar, limpar ou iniciar outra rolagem interrompe os sons agendados.
+
+**Sons especiais são da aplicação.** O motor não decide o que é um crítico. Para um som de destaque, a aplicação chama `play` quando quiser:
+
+```ts
+engine.on('rollCompleted', ({ dice }) => {
+  if (dice.some((die) => die.type === 'd20' && die.value === 20)) engine.audio.play('bell');
+});
+```
+
+Exportados: `BUILTIN_SOUNDS`, `SOUND_PROFILES`, `SURFACES`, `intensityToGain` e os tipos `AudioOptions`, `AudioState`, `AudioStats`, `BuiltinSound`, `DiceAudioControls`, `ImpactOptions`, `PlayOptions`, `SoundProfile`, `SoundSource` e `Surface`.
+
 ### Fontes de aleatoriedade
 
 ```ts
@@ -410,20 +480,16 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.5.0'
+import { VERSION } from '3dados'; // '0.6.0'
 ```
 
 ## Proposto (ainda não implementado)
 
 ```ts
 const engine = await DiceEngine.create(container, {
-  audio: { enabled: true, volume: 0.8 },
   effects: { level: 'full' }, // | 'reduced' | 'off'
 });
 
-engine.audio.setEnabled(false);
-engine.audio.setVolume(0.5);
-engine.audio.unlock();
 engine.effects.trigger('critical', { dieIds });
 engine.effects.setLevel('reduced');
 engine.remote.receive(envelope);
@@ -433,7 +499,6 @@ engine.getStats();
 
 | Funcionalidade                                         | Etapa |
 | ------------------------------------------------------ | ----- |
-| `audio`                                                | 6     |
 | `effects`                                              | 7     |
 | `remote`, `getState`, `getStats`, rolagens simultâneas | 8     |
 
