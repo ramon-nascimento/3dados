@@ -28,7 +28,7 @@ describe('planRoll', () => {
 
     expect(plan.rollId).toBe('r1');
     expect(plan.dice.map((die) => die.dieId)).toEqual(['r1:0', 'r1:1', 'r1:2', 'r1:3']);
-    expect(plan.dice.every((die) => die.source === 'rng')).toBe(true);
+    expect(plan.results.every((result) => result.source === 'rng')).toBe(true);
     expect(plan.dice.every((die) => die.targetFace.value >= 1 && die.targetFace.value <= 6)).toBe(
       true,
     );
@@ -38,7 +38,7 @@ describe('planRoll', () => {
     const plan = planRoll({ dice: [{ type: 'd6', values: [6, 1, 3] }] }, registry, rng());
 
     expect(plan.dice.map((die) => die.targetFace.value)).toEqual([6, 1, 3]);
-    expect(plan.dice.every((die) => die.source === 'predetermined')).toBe(true);
+    expect(plan.results.every((result) => result.source === 'predetermined')).toBe(true);
   });
 
   it('preserva ids, role, theme e metadata', () => {
@@ -52,7 +52,7 @@ describe('planRoll', () => {
     );
 
     expect(plan.dice.map((die) => die.dieId)).toEqual(['a', 'b']);
-    expect(plan.dice[0]).toMatchObject({ role: 'damage', theme: 'gold' });
+    expect(plan.results[0]).toMatchObject({ role: 'damage', theme: 'gold' });
     expect(plan.metadata).toEqual({ playerId: 'p1', custom: 42 });
   });
 

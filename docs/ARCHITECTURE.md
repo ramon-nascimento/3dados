@@ -37,6 +37,18 @@ Regras de separação:
 - Regras de RPG não entram em nenhum módulo. `role` é uma etiqueta opaca.
 - Nenhum elemento de interface do playground existe dentro de `src/`.
 
+## Definição de um dado
+
+Um dado é um valor puro (`DieDefinition`): vértices e faces, cada face com um valor, uma direção de leitura e, opcionalmente, rótulos. Essa única definição alimenta os três consumidores:
+
+| Consumidor | O que usa                                                     |
+| ---------- | ------------------------------------------------------------- |
+| Física     | Os vértices, como casco convexo.                              |
+| Render     | As faces (malha chanfrada) e os rótulos (atlas de textura).   |
+| Leitura    | As direções de leitura: o resultado é a que aponta para cima. |
+
+As faces dos dados padrão são calculadas a partir dos vértices. Um dado composto (`CompositeDie`), como o d100, é um dado lógico formado por dados físicos: o plano de rolagem separa os dados físicos (corpos e malhas) dos resultados pedidos. Convenções em [ADR 0007](adr/0007-numeracao-e-leitura-dos-dados.md).
+
 ## Ciclo de vida de uma rolagem
 
 O valor de cada dado é sempre conhecido **antes** de a animação começar ([ADR 0002](adr/0002-resultado-antes-da-animacao.md)).
@@ -51,7 +63,7 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 
 ### Limitações conhecidas
 
-- Dados personalizados sem simetria transitiva nas faces não podem ser reorientados. Para eles o motor re-simula até obter o valor, com orçamento de tentativas; se esgotar, a rolagem falha explicitamente.
+- Dados personalizados sem simetria transitiva nas faces não podem ser reorientados. A solução prevista (Etapa 4) é re-simular até obter o valor, com orçamento de tentativas. Até lá, `registerDie` recusa esses dados com erro claro.
 - Se nenhuma semente convergir, a melhor tentativa recebe um tombamento final curto até a face plana mais próxima e o resultado é marcado com `recovered: true`.
 - A orientação inicial do dado é consequência do valor-alvo.
 - Espectadores diferentes não veem necessariamente a mesma trajetória; veem sempre o mesmo resultado.

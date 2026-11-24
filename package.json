@@ -1,6 +1,6 @@
 {
   "name": "3dados",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Motor de rolagem de dados 3D para Virtual Tabletops (VTT), independente de framework.",
   "license": "MIT",
   "author": "Ramon Nascimento",

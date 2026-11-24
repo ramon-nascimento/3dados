@@ -68,13 +68,28 @@ export interface RollRequest {
 /** De onde veio o valor de um dado. */
 export type DieValueSource = 'predetermined' | 'rng';
 
+/** Um dos dados físicos que formam um dado composto, como o d100. */
+export interface DieComponentResult {
+  /** `<dieId do dado composto>:<parte>`, por exemplo `r1:0:tens`. */
+  dieId: DieId;
+  /** Tipo do dado físico, por exemplo `d100:tens`. */
+  type: DieType;
+  value: number;
+  faceId: string;
+}
+
 export interface DieResult {
   dieId: DieId;
   type: DieType;
   /** Valor oficial, igual ao exibido (verificado antes de concluir a rolagem). */
   value: number;
-  /** Face do dado que terminou na posição de leitura. */
+  /**
+   * Face que terminou na posição de leitura. Em dados compostos, as faces das
+   * partes unidas por "+", por exemplo `50+7`.
+   */
   faceId: string;
+  /** Só em dados compostos: o resultado de cada dado físico. */
+  components?: readonly DieComponentResult[];
   role?: string;
   source: DieValueSource;
   /** `true` se a simulação não convergiu e houve tombamento corretivo final. */

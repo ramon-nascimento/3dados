@@ -17,6 +17,11 @@ export type {
   Unsubscribe,
 } from './core/events';
 
+export { createDieDefinition } from './core/polyhedron';
+export type { FaceSpec, HullFace } from './core/polyhedron';
+export type { DieDefinition, DieFace, FaceLabel } from './core/die-definition';
+export type { Vec3 } from './core/math';
+
 export { DiceEngine } from './integration/engine';
 export type { DiceEngineOptions, RollHandle } from './integration/engine';
 
@@ -26,6 +31,7 @@ export { createCryptoRandomSource, createSeededRandomSource } from './core/rando
 export type { RandomSource } from './core/random';
 
 export type {
+  DieComponentResult,
   DieId,
   DieResult,
   DieSpec,

@@ -33,9 +33,18 @@ interface DieResources {
   texture: CanvasTexture;
 }
 
-const FIELD_OF_VIEW = 35;
-/** Altura, em unidades, que precisa ficar inteira dentro do quadro junto às paredes. */
-const VISIBLE_HEIGHT_AT_WALLS = 1.2;
+/**
+ * Distância da câmera à mesa, em unidades. É fixa: o campo de visão é que se
+ * ajusta ao tamanho do elemento. Assim a perspectiva dos dados é a mesma em um
+ * painel pequeno e em tela cheia (com campo de visão fixo, a câmera ficaria
+ * colada nos dados em elementos baixos, deformando-os).
+ */
+const CAMERA_DISTANCE = 30;
+/**
+ * Altura, em unidades, que precisa ficar inteira dentro do quadro junto às
+ * paredes. Cobre o dado mais alto em repouso (o d20, com cerca de 1,6).
+ */
+const VISIBLE_HEIGHT_AT_WALLS = 1.7;
 const SHADOW_MAP_SIZE = 2048;
 // Aparência provisória; temas e materiais chegam na Etapa 5.
 const DEFAULT_LABEL_STYLE = {
@@ -55,13 +64,15 @@ export class DiceRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
-  private readonly camera = new PerspectiveCamera(FIELD_OF_VIEW, 1, 0.1, 100);
+  private readonly camera = new PerspectiveCamera(30, 1, 0.1, CAMERA_DISTANCE + 10);
   private readonly light = new DirectionalLight(0xffffff, 2.2);
   private readonly floor: Mesh<PlaneGeometry, ShadowMaterial>;
   private readonly resizeObserver: ResizeObserver;
   private readonly resources = new Map<string, DieResources>();
   private readonly meshes = new Map<DieId, Mesh>();
   private areaSize = { width: 0, depth: 0 };
+  /** Tamanho do elemento e densidade de pixels na última vez em que a cena foi ajustada. */
+  private fitted = { width: 0, height: 0, pixelRatio: 0 };
   private frameHandle: number | null = null;
   private onFrame: (() => void) | null = null;
   private disposed = false;
@@ -113,6 +124,10 @@ export class DiceRenderer {
 
   /** Área da mesa visível, centrada na origem, em unidades (1 unidade = um dado). */
   get area(): { width: number; depth: number } {
+    // O ResizeObserver só avisa depois do layout. Se a aplicação mudou o tamanho
+    // do elemento e pediu uma rolagem no mesmo instante, a medida guardada
+    // estaria velha e os dados rolariam para fora do quadro.
+    this.resize();
     return { ...this.areaSize };
   }
 
@@ -224,16 +239,22 @@ export class DiceRenderer {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;
     if (width === 0 || height === 0) return;
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, this.options.maxPixelRatio);
+    const { fitted } = this;
+    if (fitted.width === width && fitted.height === height && fitted.pixelRatio === pixelRatio) {
+      return;
+    }
+    this.fitted = { width, height, pixelRatio };
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this.options.maxPixelRatio));
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(width, height, false);
 
     // Câmera olhando a mesa de cima: um dado apoiado ocupa ~diceSizePx na tela.
     const worldWidth = width / this.options.diceSizePx;
     const worldDepth = height / this.options.diceSizePx;
-    const cameraHeight = worldDepth / (2 * Math.tan((FIELD_OF_VIEW * Math.PI) / 360));
+    const cameraHeight = CAMERA_DISTANCE;
+    this.camera.fov = (2 * Math.atan(worldDepth / (2 * cameraHeight)) * 180) / Math.PI;
     this.camera.aspect = width / height;
-    this.camera.far = cameraHeight + 10;
     this.camera.position.set(0, cameraHeight, 0);
     this.camera.up.set(0, 0, -1);
     this.camera.lookAt(0, 0, 0);

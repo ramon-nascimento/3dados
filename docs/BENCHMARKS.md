@@ -64,6 +64,27 @@ Duas correções saíram destas medições:
 - **Fileira de lançamento mais larga.** Com quatro colunas fixas os dados caíam empilhados: 20 dados precisavam de 1,6 tentativa em média e 50 dados nunca convergiam.
 - **Velocidade de lançamento proporcional à área.** Na velocidade cheia, em áreas pequenas, os dados cruzavam a mesa várias vezes e se amontoavam nos cantos: em 13×9, 20 dados falhavam em 135 de 150 rolagens.
 
+## Por tipo de dado (Etapa 3)
+
+200 rolagens por caso, área 26×15, Node, mesma máquina. Dados só de um tipo por rolagem.
+
+| Tipo | 1 dado: CPU mediana | 5 dados: CPU mediana | 20 dados: CPU mediana | 20 dados: CPU p95 | 20 dados: tentativas | 20 dados: duração |
+| ---- | ------------------- | -------------------- | --------------------- | ----------------- | -------------------- | ----------------- |
+| d4   | 1,68 ms             | 3,25 ms              | 12,72 ms              | 41,47 ms          | 1,43                 | 1,11 s            |
+| d6   | 1,41 ms             | 3,38 ms              | 12,56 ms              | 28,43 ms          | 1,06                 | 1,15 s            |
+| d8   | 2,52 ms             | 5,96 ms              | 27,92 ms              | 91,79 ms          | 1,43                 | 1,18 s            |
+| d10  | 2,91 ms             | 8,28 ms              | 35,75 ms              | 114,92 ms         | 1,58                 | 1,32 s            |
+| d12  | 4,73 ms             | 11,74 ms             | 88,28 ms              | 309,25 ms         | 2,97 ¹               | 1,54 s            |
+| d20  | 3,84 ms             | 9,31 ms              | 68,59 ms              | 248,24 ms         | 2,71 ¹               | 1,32 s            |
+
+¹ Uma rolagem em 200 não convergiu em 12 tentativas.
+
+**O que isso significa:**
+
+- Até 5 dados de qualquer tipo, a pré-simulação fica abaixo de 12 ms na mediana e quase sempre converge na primeira tentativa.
+- Com 20 dados, d12 e d20 custam de 5 a 7 vezes mais que o d6. Parte é o custo por dado (mais faces e vértices), parte são as tentativas descartadas: quase todos os descartes são dados que param inclinados, apoiados em outros.
+- No pior caso medido (20 d12, p95) a espera antes do primeiro quadro passa de 300 ms. É perceptível. A recuperação da Etapa 4 e, se necessário, o Web Worker da Etapa 9 atacam exatamente esse caso.
+
 ## Duração da animação
 
 Os parâmetros iniciais (gravidade 400, atrito 0,45) faziam a rolagem terminar em 0,6 s, rápido demais para ser lida. Os padrões atuais (gravidade 150, atrito 0,3, restituição 0,45) dão cerca de 1,0 a 1,2 s na área de referência e 0,8 a 1,0 s em áreas pequenas. A gravidade é cerca de um quarto da real na escala de um dado de 16 mm, o que deixa o movimento aproximadamente duas vezes mais lento que o de um dado físico. É uma escolha de legibilidade, ajustável por `physics.gravity`.

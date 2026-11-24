@@ -4,19 +4,31 @@ import { randomInt, type RandomSource } from './random';
 import type { DieId, DieType, DieValueSource, RollId, RollMetadata, RollRequest } from './types';
 
 /**
- * Limite de segurança de dados por rolagem. É provisório: o valor definitivo
- * sai dos benchmarks da Etapa 9.
+ * Limite de segurança de dados físicos por rolagem (um d100 conta como dois).
+ * É provisório: o valor definitivo sai dos benchmarks da Etapa 9.
  */
 export const MAX_DICE_PER_ROLL = 30;
 
-/** Um dado de uma rolagem, com o resultado já decidido. */
+/** Um dado físico de uma rolagem: um corpo na simulação e uma malha na tela. */
 export interface PlannedDie {
   readonly dieId: DieId;
+  /** Tipo do dado físico. Em dados compostos, o da parte (ex.: `d100:tens`). */
   readonly type: DieType;
   readonly definition: DieDefinition;
   /** Face que precisa terminar na posição de leitura. */
   readonly targetFace: DieFace;
+}
+
+/** Um dado pedido, com o resultado já decidido. Formado por um ou mais dados físicos. */
+export interface PlannedResult {
+  readonly dieId: DieId;
+  /** Tipo pedido (ex.: `d100`). */
+  readonly type: DieType;
+  /** Valor oficial deste dado. */
+  readonly value: number;
   readonly source: DieValueSource;
+  /** Índices, em `RollPlan.dice`, dos dados físicos que o formam. */
+  readonly parts: readonly number[];
   readonly role?: string;
   readonly theme?: string;
 }
@@ -24,7 +36,10 @@ export interface PlannedDie {
 /** Pedido validado, com todos os valores fixados antes de qualquer animação. */
 export interface RollPlan {
   readonly rollId: RollId;
+  /** Dados físicos, na ordem em que são simulados. */
   readonly dice: readonly PlannedDie[];
+  /** Dados pedidos, na ordem do pedido. */
+  readonly results: readonly PlannedResult[];
   /** Semente da trajetória visual. */
   readonly seed: number;
   readonly metadata?: RollMetadata;
@@ -51,6 +66,20 @@ export function generateRollId(rng: RandomSource): RollId {
   return `roll-${part()}${part()}`;
 }
 
+/** Sorteia uma face (não um valor): correto mesmo em dados com valores repetidos. */
+function randomFace(definition: DieDefinition, rng: RandomSource): DieFace {
+  return definition.faces[randomInt(rng, definition.faces.length)]!;
+}
+
+function faceWithValue(
+  definition: DieDefinition,
+  value: unknown,
+  rng: RandomSource,
+): DieFace | undefined {
+  const candidates = definition.faces.filter((face) => face.value === value);
+  return candidates.length === 0 ? undefined : candidates[randomInt(rng, candidates.length)];
+}
+
 /**
  * Valida um pedido e decide o valor de cada dado: usa os valores fornecidos
  * (modo controlado) ou sorteia uma face (modo autônomo). O pedido pode vir de
@@ -74,19 +103,36 @@ export function planRoll(request: RollRequest, registry: DieRegistry, rng: Rando
 
   const rollId = raw.id ?? generateRollId(rng);
   const dice: PlannedDie[] = [];
+  const results: PlannedResult[] = [];
   const usedIds = new Set<DieId>();
+
+  const claimId = (dieId: unknown, index: number): DieId => {
+    if (typeof dieId !== 'string' || dieId.length === 0) {
+      throw invalid(`dice[${index}].ids precisa conter textos não vazios.`, { index });
+    }
+    if (usedIds.has(dieId)) {
+      throw invalid(`Identificador de dado repetido: "${dieId}".`, { index, dieId });
+    }
+    usedIds.add(dieId);
+    return dieId;
+  };
 
   (raw.dice as unknown[]).forEach((spec, index) => {
     if (!isRecord(spec)) throw invalid(`dice[${index}] precisa ser um objeto.`, { index });
     if (typeof spec.type !== 'string') {
       throw invalid(`dice[${index}].type precisa ser um texto.`, { index });
     }
-    const definition = registry.get(spec.type);
-    if (!definition) {
-      throw new DiceError('UNKNOWN_DIE_TYPE', `Tipo de dado desconhecido: "${spec.type}".`, {
-        details: { index, type: spec.type, known: registry.types() },
+    const requestedType = spec.type;
+    const registered = registry.resolve(requestedType);
+    if (!registered) {
+      throw new DiceError('UNKNOWN_DIE_TYPE', `Tipo de dado desconhecido: "${requestedType}".`, {
+        details: { index, type: requestedType, known: registry.types() },
       });
     }
+    const parts =
+      registered.kind === 'single'
+        ? [{ key: undefined, definition: registered.definition }]
+        : registered.composite.parts;
 
     const { values, ids } = spec;
     if (values !== undefined && !Array.isArray(values)) {
@@ -116,8 +162,8 @@ export function planRoll(request: RollRequest, registry: DieRegistry, rng: Rando
         received: ids.length,
       });
     }
-    if (dice.length + count > MAX_DICE_PER_ROLL) {
-      throw invalid(`Uma rolagem aceita no máximo ${MAX_DICE_PER_ROLL} dados.`, {
+    if (dice.length + count * parts.length > MAX_DICE_PER_ROLL) {
+      throw invalid(`Uma rolagem aceita no máximo ${MAX_DICE_PER_ROLL} dados físicos.`, {
         max: MAX_DICE_PER_ROLL,
       });
     }
@@ -125,41 +171,50 @@ export function planRoll(request: RollRequest, registry: DieRegistry, rng: Rando
     const theme = optionalString(spec.theme, 'theme', index);
 
     for (let i = 0; i < count; i++) {
-      const dieId: unknown = ids ? ids[i] : `${rollId}:${dice.length}`;
-      if (typeof dieId !== 'string' || dieId.length === 0) {
-        throw invalid(`dice[${index}].ids[${i}] precisa ser um texto não vazio.`, { index });
-      }
-      if (usedIds.has(dieId)) {
-        throw invalid(`Identificador de dado repetido: "${dieId}".`, { index, dieId });
-      }
-      usedIds.add(dieId);
+      const dieId = claimId(ids ? ids[i] : `${rollId}:${results.length}`, index);
+      const requested: unknown = values?.[i];
+      const noSuchValue = () =>
+        invalid(`O valor ${String(requested)} não existe em um ${requestedType}.`, {
+          index,
+          value: requested,
+          type: requestedType,
+        });
 
-      let targetFace: DieFace;
-      let source: DieValueSource;
-      if (values) {
-        const value: unknown = values[i];
-        const candidates = definition.faces.filter((face) => face.value === value);
-        if (candidates.length === 0) {
-          throw invalid(`O valor ${String(value)} não existe em um ${definition.type}.`, {
-            index,
-            value,
-            type: definition.type,
-          });
-        }
-        targetFace = candidates[randomInt(rng, candidates.length)]!;
-        source = 'predetermined';
+      let faces: DieFace[];
+      if (!values) {
+        faces = parts.map(({ definition }) => randomFace(definition, rng));
+      } else if (registered.kind === 'single') {
+        const face = faceWithValue(registered.definition, requested, rng);
+        if (!face) throw noSuchValue();
+        faces = [face];
       } else {
-        // Sorteia uma face (não um valor): correto mesmo em dados com valores repetidos.
-        targetFace = definition.faces[randomInt(rng, definition.faces.length)]!;
-        source = 'rng';
+        const split =
+          typeof requested === 'number' ? registered.composite.split(requested) : undefined;
+        if (!split) throw noSuchValue();
+        faces = parts.map(({ definition }, p) => {
+          const face = faceWithValue(definition, split[p], rng);
+          if (!face) throw noSuchValue();
+          return face;
+        });
       }
 
-      dice.push({
+      const partIndices = parts.map(({ key, definition }, p) => {
+        dice.push({
+          dieId: key === undefined ? dieId : claimId(`${dieId}:${key}`, index),
+          type: definition.type,
+          definition,
+          targetFace: faces[p]!,
+        });
+        return dice.length - 1;
+      });
+      const faceValues = faces.map((face) => face.value);
+      results.push({
         dieId,
-        type: definition.type,
-        definition,
-        targetFace,
-        source,
+        type: requestedType,
+        value:
+          registered.kind === 'single' ? faceValues[0]! : registered.composite.combine(faceValues),
+        source: values ? 'predetermined' : 'rng',
+        parts: partIndices,
         ...(role === undefined ? {} : { role }),
         ...(theme === undefined ? {} : { theme }),
       });
@@ -169,6 +224,7 @@ export function planRoll(request: RollRequest, registry: DieRegistry, rng: Rando
   return {
     rollId,
     dice,
+    results,
     seed: raw.seed === undefined ? rng.nextUint32() : raw.seed >>> 0,
     ...(raw.metadata === undefined ? {} : { metadata: raw.metadata }),
   };

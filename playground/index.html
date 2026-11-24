@@ -24,28 +24,16 @@
         <section class="panel" aria-labelledby="roll-title">
           <h2 id="roll-title">Rolagem</h2>
           <form id="roll-form" class="form">
-            <label>
-              Quantidade de d6
-              <input
-                data-testid="roll-count"
-                name="count"
-                type="number"
-                min="1"
-                max="50"
-                value="3"
-              />
-            </label>
-            <label>
-              Valores predeterminados
-              <input
-                data-testid="roll-values"
-                name="values"
-                type="text"
-                inputmode="numeric"
-                placeholder="ex.: 6, 1, 3 (vazio = sorteio)"
-                autocomplete="off"
-              />
-            </label>
+            <div class="dice-grid" id="dice-rows" role="group" aria-label="Dados a rolar">
+              <span class="dice-grid-head">Dado</span>
+              <span class="dice-grid-head">Qtd.</span>
+              <span class="dice-grid-head">Valores predeterminados</span>
+            </div>
+            <p class="hint">
+              Com valores preenchidos (ex.: <code>6, 1, 3</code>) o dado é rolado em modo controlado
+              e a quantidade é ignorada. <strong>dF</strong> é um dado personalizado registrado pelo
+              playground.
+            </p>
             <div class="buttons">
               <button data-testid="roll-button" type="submit" class="primary">Rolar</button>
               <button data-testid="cancel-button" type="button" id="cancel">Cancelar</button>
@@ -63,6 +51,8 @@
             <dd data-testid="roll-result-values">—</dd>
             <dt>Total</dt>
             <dd data-testid="roll-total">—</dd>
+            <dt>Por dado</dt>
+            <dd data-testid="roll-result-detail">—</dd>
           </dl>
         </section>
 

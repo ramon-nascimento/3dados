@@ -4,9 +4,9 @@ A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto
 
 Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
 
-## Disponível hoje (0.2.0)
+## Disponível hoje (0.3.0)
 
-Só o **d6** está implementado. Os demais dados chegam na Etapa 3.
+Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
 ### Motor
 
@@ -29,6 +29,7 @@ const engine = await DiceEngine.create(container, {
 | `cancel(rollId?): boolean`  | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado. |
 | `clear(): void`             | Cancela a rolagem em andamento e remove os dados da mesa.                                     |
 | `on(evento, ouvinte)`       | Registra um ouvinte; devolve a função que o remove.                                           |
+| `registerDie(definition)`   | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                |
 | `destroy(): void`           | Cancela, libera GPU e remove o canvas. A instância não pode ser reutilizada.                  |
 
 ```ts
@@ -83,7 +84,8 @@ Regras:
 - Em um `DieSpec`, ou todos os dados têm valor, ou nenhum.
 - `seed` nunca influencia valores. Na mesma máquina, a mesma semente reproduz a mesma animação.
 - `metadata` é devolvido sem alteração nos eventos e no desfecho.
-- No máximo 30 dados por rolagem. A capacidade real depende da área: ver [BENCHMARKS.md](BENCHMARKS.md).
+- No máximo 30 dados físicos por rolagem (um d100 conta como dois). A capacidade real depende da área e do tamanho dos dados: ver [BENCHMARKS.md](BENCHMARKS.md).
+- `values` usa os valores do dado: 1 a 10 no d10, 1 a 100 no d100.
 
 ### Desfecho
 
@@ -117,12 +119,76 @@ interface DieResult {
   dieId: string;
   type: DieType;
   value: number; // igual ao exibido
-  faceId: string;
+  faceId: string; // em dados compostos, as faces das partes: "50+7"
+  components?: readonly DieComponentResult[]; // só em dados compostos
   role?: string;
   source: 'predetermined' | 'rng';
   recovered: boolean; // sempre false até a Etapa 4
 }
+
+interface DieComponentResult {
+  dieId: string; // "<dieId do dado>:tens" ou "<dieId do dado>:units"
+  type: DieType; // "d100:tens" ou "d100:units"
+  value: number;
+  faceId: string;
+}
 ```
+
+### Dados
+
+| Tipo   | Valores | Leitura                                                                 |
+| ------ | ------- | ----------------------------------------------------------------------- |
+| `d4`   | 1–4     | Vértice de cima; o número fica junto ao vértice, nas três faces.        |
+| `d6`   | 1–6     | Face de cima. Opostas somam 7.                                          |
+| `d8`   | 1–8     | Face de cima. Opostas somam 9.                                          |
+| `d10`  | 1–10    | Face de cima. Faces marcadas de 0 a 9; a face "0" vale 10.              |
+| `d12`  | 1–12    | Face de cima. Opostas somam 13.                                         |
+| `d20`  | 1–20    | Face de cima. Opostas somam 21.                                         |
+| `d100` | 1–100   | Dois dados: dezenas ("00"–"90") e unidades ("0"–"9"). "00" + "0" = 100. |
+
+O d100 é um dado composto. No resultado, `value` é o total e `components` traz cada dado físico. Os eventos `rollStarted`, `diceCollided` e `diceSettled` referem-se aos dados físicos (`<dieId>:tens` e `<dieId>:units`).
+
+A disposição dos números em torno de cada dado é própria do projeto; ver [ADR 0007](adr/0007-numeracao-e-leitura-dos-dados.md).
+
+### Dados personalizados
+
+```ts
+import { createDieDefinition } from '3dados';
+
+// Cubo com dois "+", dois "−" e duas faces em branco, valendo +1, −1 e 0.
+const h = 0.5;
+const vertices = [-h, h].flatMap((x) => [-h, h].flatMap((y) => [-h, h].map((z) => ({ x, y, z }))));
+
+engine.registerDie(
+  createDieDefinition('dF', vertices, (face) => {
+    const axis = Math.abs(face.normal.x) > 0.5 ? 0 : Math.abs(face.normal.y) > 0.5 ? 1 : 2;
+    return { value: [1, 0, -1][axis], id: `f${face.index}`, text: ['+', '', '−'][axis] };
+  }),
+);
+
+engine.roll({ dice: [{ type: 'dF', count: 4 }] });
+```
+
+`createDieDefinition(type, vertices, describe)` calcula as faces a partir dos vértices (casco convexo) e chama `describe` para cada uma. `describe` recebe `{ index, vertexIndices, normal, centroid }` e devolve:
+
+| Campo           | Significado                                                                 |
+| --------------- | --------------------------------------------------------------------------- |
+| `value`         | Valor registrado quando a face é o resultado. Pode repetir e ser negativo.  |
+| `id`            | Identificador único da face. Padrão: o índice.                              |
+| `text`          | Texto desenhado no centro, no lugar do valor. Vazio deixa a face em branco. |
+| `labels`        | Controle total: lista de `{ text, anchor, up, height }`.                    |
+| `readDirection` | Direção que aponta para cima quando a face é o resultado. Padrão: a normal. |
+
+Também é possível passar uma `DieDefinition` completa (`{ type, vertices, faces }`). A unidade de comprimento é a aresta de um d6.
+
+`registerDie` lança `DiceError` `INVALID_DIE_DEFINITION`, com a causa na mensagem, se:
+
+- o sólido não for convexo, fechado e com a origem no interior, ou alguma face não for plana;
+- uma face estiver listada em sentido horário (visto de fora);
+- houver identificadores de face repetidos ou duas faces com a mesma direção de leitura;
+- existir uma posição de repouso sem nenhuma leitura apontando para cima (resultado ambíguo);
+- as faces não forem todas equivalentes por rotação (limitação até a Etapa 4);
+- o tipo já estiver registrado.
 
 ### Eventos
 
@@ -153,6 +219,7 @@ import { DiceError, isDiceError } from '3dados';
 | `INVALID_ARGUMENT`        | Argumento inválido em uma função da biblioteca.       |
 | `INVALID_REQUEST`         | Pedido de rolagem malformado.                         |
 | `UNKNOWN_DIE_TYPE`        | Tipo de dado não registrado.                          |
+| `INVALID_DIE_DEFINITION`  | Definição de dado personalizado inválida.             |
 | `SIMULATION_FAILED`       | A simulação não convergiu no orçamento de tentativas. |
 | `RESULT_MISMATCH`         | O valor exibido divergiu do oficial.                  |
 | `UNSUPPORTED_ENVIRONMENT` | Recurso de plataforma indisponível.                   |
@@ -196,7 +263,7 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.2.0'
+import { VERSION } from '3dados'; // '0.3.0'
 ```
 
 ## Proposto (ainda não implementado)
@@ -210,7 +277,6 @@ const engine = await DiceEngine.create(container, {
   effects: { level: 'full' }, // | 'reduced' | 'off'
 });
 
-engine.registerDie(definition);
 engine.registerTheme(theme);
 engine.setDefaultTheme(id);
 engine.audio.setEnabled(false);
@@ -225,18 +291,11 @@ engine.getStats();
 
 | Funcionalidade                                         | Etapa |
 | ------------------------------------------------------ | ----- |
-| d4, d8, d10, d12, d20, d100 e `registerDie`            | 3     |
-| Dados sem simetria, recuperação (`recovered`)          | 4     |
+| Dados personalizados sem simetria, recuperação         | 4     |
 | Temas, `presentation`, `quality`                       | 5     |
 | `audio`                                                | 6     |
 | `effects`                                              | 7     |
 | `remote`, `getState`, `getStats`, rolagens simultâneas | 8     |
-
-### Convenções de dados
-
-- **d100**: dois d10, dezenas (00–90) e unidades (0–9). O resultado expõe ambos e o total; `00` + `0` vale 100.
-- **d10**: faces 0–9. Se a face `0` vale 10 ou 0 quando o dado é rolado sozinho será decidido na Etapa 3.
-- **d4**: leitura pelo vértice superior, com os números junto aos vértices.
 
 ### Temas
 

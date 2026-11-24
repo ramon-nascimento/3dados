@@ -63,6 +63,8 @@ h2 {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 320px;
+  /* Sem isto a linha cresce com o conteúdo dos painéis e a página estoura a janela. */
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
 }
 
@@ -91,6 +93,7 @@ h2 {
 }
 
 .panels {
+  min-height: 0;
   overflow-y: auto;
   border-left: 1px solid var(--border);
   background: var(--surface);
@@ -121,6 +124,45 @@ input {
   background: var(--bg);
   color: var(--text);
   font: inherit;
+}
+
+.dice-grid {
+  display: grid;
+  grid-template-columns: auto 56px 1fr;
+  align-items: center;
+  gap: 6px 8px;
+}
+
+.dice-grid-head {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.dice-grid label {
+  display: contents;
+}
+
+.dice-grid .die-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dice-grid input {
+  padding: 6px 8px;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  color: var(--text);
 }
 
 .buttons {

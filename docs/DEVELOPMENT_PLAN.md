@@ -6,8 +6,8 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | ----- | ---------------------- | -------------------- |
 | 1     | Fundação               | ✅ Concluída         |
 | 2     | Primeiro d6 funcional  | ✅ Concluída         |
-| 3     | Dados poliédricos      | Aguardando aprovação |
-| 4     | Resultados controlados | —                    |
+| 3     | Dados poliédricos      | ✅ Concluída         |
+| 4     | Resultados controlados | Aguardando aprovação |
 | 5     | Materiais e temas      | —                    |
 | 6     | Sonorização            | —                    |
 | 7     | Efeitos visuais        | —                    |
@@ -56,17 +56,30 @@ Descobertas desta etapa:
 - **A primeira rolagem da página é mais lenta** (95 ms contra ~5 ms), pelo aquecimento do WASM.
 - **Eventos de colisão são só de início de contato.** O rolar contínuo de um dado não gera eventos; será refinado com o áudio (Etapa 6).
 
-## Etapa 3 — Dados poliédricos
+## Etapa 3 — Dados poliédricos ✅
 
 d4, d8, d10, d12, d20, d100 e dados personalizados; chanfro das arestas.
 
-Critérios de aceite:
+| Critério de aceite                                               | Evidência                                                                                                                                                      |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Planaridade, convexidade e casco convexo de cada dado            | `tests/unit/all-dice.test.ts` (planaridade e convexidade, por face) e `tests/integration/all-dice.test.ts` (casco criado pelo Rapier).                         |
+| Leitura correta para toda face de todo dado                      | `all-dice.test.ts`: cada face é lida com sua direção para cima; cada posição de repouso tem leitura plana e distinta. Com física: 200 pré-simulações por tipo. |
+| Grupo de simetria: 12 (d4), 24 (d6, d8), 10 (d10), 60 (d12, d20) | `all-dice.test.ts`, mais a troca de qualquer face por qualquer outra em todos os pares.                                                                        |
+| O d100 compõe todos os valores de 1 a 100                        | `tests/unit/d100.test.ts` (bijeção e uniformidade) e teste do motor exibindo os 100 valores, com dezena e unidade conferidas.                                  |
+| Dado personalizado inválido é rejeitado com erro claro           | `tests/unit/validate-die.test.ts`: 17 casos de rejeição, cada um com a mensagem esperada.                                                                      |
 
-- Testes de planaridade das faces, convexidade e criação do casco convexo para cada dado.
-- Leitura correta para toda face de todo dado.
-- Grupo de simetria com a ordem esperada: 12 (d4), 24 (d6, d8), 10 (d10), 60 (d12, d20).
-- O d100 compõe todos os valores de 1 a 100.
-- Dado personalizado com geometria inválida é rejeitado com erro claro.
+Além dos critérios:
+
+- **Cada valor de cada dado é exibido quando pedido**, de ponta a ponta com física real (`tests/integration/all-dice.test.ts`), e no navegador (`tests/e2e/roll.spec.ts`).
+- **Inspeção visual** no playground: números corretos em todos os poliedros, inclusive o d4 lido pelo vértice e o d100 em dois dados.
+- **Malha chanfrada** verificada para todos os dados: fechada, voltada para fora e contida no sólido da física.
+
+Descobertas desta etapa:
+
+- **Dados grandes convergem pior.** Com 20 d12 ou d20 na área de referência, a pré-simulação precisa de cerca de 3 tentativas e falhou em 1 de 200 rolagens; números em [BENCHMARKS.md](BENCHMARKS.md). É o principal motivo para a recuperação da Etapa 4.
+- **A perspectiva dependia do tamanho do elemento.** Em containers baixos a câmera ficava colada nos dados e os deformava. A câmera passou a ficar a distância fixa.
+- **Dados altos eram cortados junto às bordas.** A margem das paredes passou a cobrir o dado mais alto.
+- **Um sólido sem faces opostas não pode ser lido pela face de cima.** A validação recusa esse caso (por exemplo, uma bipirâmide triangular) em vez de aceitar um dado que nunca convergiria.
 
 ## Etapa 4 — Resultados controlados
 
@@ -139,10 +152,14 @@ Critérios de aceite:
 
 | Decisão                                            | Etapa |
 | -------------------------------------------------- | ----- |
-| Valor da face `0` do d10 rolado sozinho (0 ou 10)  | 3     |
 | Rolagens simultâneas: fila ou sobreposição         | 8     |
 | Semântica final de `visibility` (`blind` e afins)  | 8     |
 | Trajetórias iguais entre clientes por semente      | 8     |
 | Pré-simulação na thread principal ou em Web Worker | 9     |
 
-Decididas: build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)). A pré-simulação segue na thread principal; pelos números da Etapa 2 um Worker não se justifica, e a decisão será revista com medições em hardware mais fraco.
+Decididas:
+
+- Build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)).
+- A face `0` do d10 rolado sozinho vale **10** (2026-11-24). A face continua mostrando "0"; o valor registrado é 10.
+
+A pré-simulação segue na thread principal; pelos números da Etapa 2 um Worker não se justifica, e a decisão será revista com medições em hardware mais fraco.

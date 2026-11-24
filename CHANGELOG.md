@@ -4,6 +4,31 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.3.0] — 2026-11-24
+
+Etapa 3 — Dados poliédricos.
+
+### Adicionado
+
+- d4 (lido pelo vértice de cima), d8, d10, d12, d20 e d100 (dois dados: dezenas e unidades).
+- Dados personalizados: `engine.registerDie()` e `createDieDefinition()`, com validação de convexidade, planaridade, superfície fechada e leitura sem ambiguidade.
+- Rótulos por face (texto, posição, direção e tamanho), com traço sob 6 e 9 nos dados que têm os dois.
+- Arestas chanfradas na malha; a física continua usando o sólido de arestas vivas.
+- `DieResult.components` para dados compostos e código de erro `INVALID_DIE_DEFINITION`.
+- Playground: escolha de tipo e quantidade por dado, e um dado personalizado de exemplo.
+
+### Alterado
+
+- A câmera fica a distância fixa e o campo de visão se ajusta ao elemento: a perspectiva dos dados deixa de depender do tamanho do container.
+- O espaçamento inicial dos dados passa a considerar o maior dado da rolagem.
+- O limite de 30 por rolagem conta dados físicos (um d100 vale por dois).
+- A face "0" do d10 rolado sozinho vale 10.
+
+### Limitações conhecidas
+
+- Dados personalizados precisam ter todas as faces equivalentes por rotação.
+- Rolagens com muitos dados grandes (d12, d20) convergem com mais tentativas; ver `docs/BENCHMARKS.md`.
+
 ## [0.2.0] — 2026-11-24
 
 Etapa 2 — Primeiro d6 funcional.

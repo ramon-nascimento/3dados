@@ -1,4 +1,4 @@
-import type { DieDefinition, DieFace } from '../core/die-definition';
+import { dieRadius, type DieDefinition, type DieFace } from '../core/die-definition';
 import { DiceError } from '../core/errors';
 import { isFlat, readFace } from '../core/face-reading';
 import { rotateVector, type Quat, type Vec3 } from '../core/math';
@@ -62,15 +62,16 @@ const REST_ANGULAR_SPEED = 0.15;
 const REST_SECONDS = 0.25;
 /** Distância máxima entre o ponto mais baixo do dado e a mesa para considerar que ele a toca. */
 const SURFACE_TOLERANCE = 0.03;
-/**
- * Espaçamento inicial entre dados. Descontada a variação aleatória, continua
- * maior que o diâmetro da esfera que contém um d6 (√3 ≈ 1,73): os dados nunca
- * começam sobrepostos, qualquer que seja a orientação inicial.
- */
-const SPAWN_SPACING = 1.95;
+/** Variação aleatória da posição inicial de cada dado. */
 const SPAWN_JITTER = 0.07;
-/** Distância mínima entre o centro de um dado e a parede no início. */
-const SPAWN_WALL_MARGIN = 0.9 + SPAWN_JITTER;
+/**
+ * Folga somada ao diâmetro do maior dado para obter o espaçamento inicial. Já
+ * descontada a variação aleatória, as esferas que contêm dois dados vizinhos
+ * não se tocam: os dados nunca começam sobrepostos, em nenhuma orientação.
+ */
+const SPAWN_CLEARANCE = 0.22;
+/** Folga entre a esfera de um dado e a parede no início. */
+const SPAWN_WALL_CLEARANCE = 0.034 + SPAWN_JITTER;
 /** Até este número, os dados saem em uma única fileira. */
 const SPAWN_MIN_COLUMNS = 4;
 const SPAWN_HEIGHT = 2;
@@ -164,6 +165,10 @@ export class PhysicsSimulator {
     const maxSteps = Math.ceil(config.maxDuration / config.timestep);
     const restSteps = Math.ceil(REST_SECONDS / config.timestep);
 
+    const largestRadius = Math.max(...request.dice.map(({ definition }) => dieRadius(definition)));
+    const spawnSpacing = 2 * largestRadius + SPAWN_CLEARANCE;
+    const wallMargin = largestRadius + SPAWN_WALL_CLEARANCE;
+
     const world = new R.World({ x: 0, y: -config.gravity, z: 0 });
     const events = new R.EventQueue(true);
     try {
@@ -201,21 +206,21 @@ export class PhysicsSimulator {
       // muitos dados a fileira se alarga em vez de empilhar: dados que caem uns
       // sobre os outros tendem a parar inclinados e a invalidar a tentativa.
       const rowReach = Math.min(
-        Math.abs(dirZ) > 1e-9 ? (halfWidth - SPAWN_WALL_MARGIN) / Math.abs(dirZ) : Infinity,
-        Math.abs(dirX) > 1e-9 ? (halfDepth - SPAWN_WALL_MARGIN) / Math.abs(dirX) : Infinity,
+        Math.abs(dirZ) > 1e-9 ? (halfWidth - wallMargin) / Math.abs(dirZ) : Infinity,
+        Math.abs(dirX) > 1e-9 ? (halfDepth - wallMargin) / Math.abs(dirX) : Infinity,
       );
-      const fitting = Math.floor((2 * Math.max(rowReach, 0)) / SPAWN_SPACING) + 1;
+      const fitting = Math.floor((2 * Math.max(rowReach, 0)) / spawnSpacing) + 1;
       const columns = Math.min(dieCount, Math.max(fitting, SPAWN_MIN_COLUMNS));
       // A fileira de dados é perpendicular ao lançamento. O centro dela é
       // recuado o bastante para a fileira inteira caber dentro das paredes.
-      const halfRow = ((columns - 1) / 2) * SPAWN_SPACING;
+      const halfRow = ((columns - 1) / 2) * spawnSpacing;
       const centerX = clampSymmetric(
         -dirX * startDistance,
-        halfWidth - SPAWN_WALL_MARGIN - Math.abs(dirZ) * halfRow,
+        halfWidth - wallMargin - Math.abs(dirZ) * halfRow,
       );
       const centerZ = clampSymmetric(
         -dirZ * startDistance,
-        halfDepth - SPAWN_WALL_MARGIN - Math.abs(dirX) * halfRow,
+        halfDepth - wallMargin - Math.abs(dirX) * halfRow,
       );
 
       const bodies = request.dice.map(({ definition }, index) => {
@@ -229,7 +234,7 @@ export class PhysicsSimulator {
         }
         const column = index % columns;
         const layer = Math.floor(index / columns);
-        const lateral = (column - (columns - 1) / 2) * SPAWN_SPACING;
+        const lateral = (column - (columns - 1) / 2) * spawnSpacing;
         const jitter = () => (randomFloat(rng) - 0.5) * 2 * SPAWN_JITTER;
         const x = centerX - dirZ * lateral + jitter();
         const z = centerZ + dirX * lateral + jitter();
@@ -240,7 +245,7 @@ export class PhysicsSimulator {
 
         const body = world.createRigidBody(
           R.RigidBodyDesc.dynamic()
-            .setTranslation(x, SPAWN_HEIGHT + layer * SPAWN_SPACING + jitter(), z)
+            .setTranslation(x, SPAWN_HEIGHT + layer * spawnSpacing + jitter(), z)
             .setRotation(randomUnitQuat(rng))
             .setLinvel(
               Math.cos(angle) * speed,

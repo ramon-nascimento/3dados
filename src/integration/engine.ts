@@ -1,5 +1,5 @@
-import { D6 } from '../core/dice/d6';
-import { DieRegistry, type DieDefinition } from '../core/die-definition';
+import { createStandardRegistry } from '../core/dice/standard';
+import type { DieDefinition, DieRegistry } from '../core/die-definition';
 import { DiceError, isDiceError } from '../core/errors';
 import {
   TypedEmitter,
@@ -19,6 +19,7 @@ import {
 import { generateRollId, planRoll, type RollPlan } from '../core/roll-plan';
 import { findReorientations } from '../core/symmetry';
 import { finalRotation, sampleTrajectory, type SimulationRecording } from '../core/trajectory';
+import { validateDieDefinition } from '../core/validate-die';
 import type {
   DieId,
   DieResult,
@@ -141,7 +142,7 @@ export class DiceEngine {
         renderer,
         simulator: await createPhysicsSimulator(options.physics),
         rng: options.rng ?? createCryptoRandomSource(),
-        registry: new DieRegistry([D6]),
+        registry: createStandardRegistry(),
         now: () => performance.now(),
       });
     } catch (error) {
@@ -218,6 +219,26 @@ export class DiceEngine {
     this.deps.renderer.render();
   }
 
+  /**
+   * Registra um dado personalizado, que passa a poder ser pedido pelo seu
+   * `type`. Lança `DiceError` `INVALID_DIE_DEFINITION` se a geometria ou as
+   * faces forem inválidas, ou se o tipo já existir.
+   */
+  registerDie(definition: DieDefinition): void {
+    if (this.destroyed) throw new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.');
+    const validated = validateDieDefinition(definition);
+    if (this.deps.registry.has(validated.type)) {
+      throw new DiceError(
+        'INVALID_DIE_DEFINITION',
+        `Já existe um dado do tipo "${validated.type}".`,
+        {
+          details: { type: validated.type },
+        },
+      );
+    }
+    this.deps.registry.register(validated);
+  }
+
   on<K extends DiceEventName>(eventName: K, listener: Listener<DiceEventMap[K]>): Unsubscribe {
     return this.emitter.on(eventName, listener);
   }
@@ -276,11 +297,12 @@ export class DiceEngine {
       };
       this.emitter.emit('rollStarted', {
         rollId: plan.rollId,
-        dice: plan.dice.map(({ dieId, type, role }) => ({
-          dieId,
-          type,
-          ...(role === undefined ? {} : { role }),
-        })),
+        dice: plan.results.flatMap(({ parts, role }) =>
+          parts.map((index) => {
+            const { dieId, type } = plan.dice[index]!;
+            return { dieId, type, ...(role === undefined ? {} : { role }) };
+          }),
+        ),
         simulation: { attempts: simulation.attempts, cpuTimeMs: simulation.cpuTimeMs },
         ...metadataOf(plan.metadata),
       });
@@ -389,7 +411,7 @@ export class DiceEngine {
   /** Só conclui depois de ler, na cena, o valor que cada malha realmente exibe. */
   private finishCompleted(active: ActiveRoll): void {
     const { plan } = active;
-    const dice: DieResult[] = plan.dice.map((die) => {
+    for (const die of plan.dice) {
       const displayed = readFace(die.definition, this.deps.renderer.getDieRotation(die.dieId));
       if (displayed.face.id !== die.targetFace.id || !isFlat(displayed)) {
         throw new DiceError('RESULT_MISMATCH', 'O valor exibido diverge do valor oficial.', {
@@ -401,14 +423,29 @@ export class DiceEngine {
           },
         });
       }
+    }
+
+    const dice: DieResult[] = plan.results.map((result) => {
+      const parts = result.parts.map((index) => plan.dice[index]!);
       return {
-        dieId: die.dieId,
-        type: die.type,
-        value: die.targetFace.value,
-        faceId: die.targetFace.id,
-        source: die.source,
+        dieId: result.dieId,
+        type: result.type,
+        value: result.value,
+        faceId: parts.map((part) => part.targetFace.id).join('+'),
+        source: result.source,
         recovered: false,
-        ...(die.role === undefined ? {} : { role: die.role }),
+        ...(result.role === undefined ? {} : { role: result.role }),
+        // Dados compostos (d100) expõem o resultado de cada dado físico.
+        ...(parts.length === 1
+          ? {}
+          : {
+              components: parts.map((part) => ({
+                dieId: part.dieId,
+                type: part.type,
+                value: part.targetFace.value,
+                faceId: part.targetFace.id,
+              })),
+            }),
       };
     });
 

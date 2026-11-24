@@ -6,6 +6,8 @@ export type DiceErrorCode =
   | 'INVALID_REQUEST'
   /** Tipo de dado não registrado. */
   | 'UNKNOWN_DIE_TYPE'
+  /** Definição de dado personalizado inválida (geometria, faces ou leitura ambígua). */
+  | 'INVALID_DIE_DEFINITION'
   /** A simulação não convergiu dentro do orçamento de tentativas. */
   | 'SIMULATION_FAILED'
   /** O valor exibido divergiu do valor oficial. Nunca é silenciado. */

@@ -11,7 +11,10 @@ export interface LabelStyle {
   cellSize: number;
 }
 
-/** Desenha o atlas de rótulos: uma célula por face, com o texto centralizado. */
+/** Textos com dois ou mais caracteres são reduzidos para caber na mesma área. */
+const MULTI_CHARACTER_SCALE = 0.8;
+
+/** Desenha o atlas de rótulos: uma célula por face, com seus textos posicionados e girados. */
 export function paintLabelAtlas(layout: AtlasLayout, style: LabelStyle): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = layout.columns * style.cellSize;
@@ -26,16 +29,32 @@ export function paintLabelAtlas(layout: AtlasLayout, style: LabelStyle): HTMLCan
   context.fillStyle = style.foreground;
   context.textAlign = 'center';
   context.textBaseline = 'alphabetic';
-  context.font = `700 ${Math.round(style.cellSize * 0.62)}px ${style.fontFamily}`;
 
-  layout.labels.forEach((label, index) => {
-    const centerX = ((index % layout.columns) + 0.5) * style.cellSize;
-    const centerY = (Math.floor(index / layout.columns) + 0.5) * style.cellSize;
-    // Centraliza pela caixa real do glifo, não pela linha de base.
-    const metrics = context.measureText(label);
-    const baseline =
-      centerY + (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
-    context.fillText(label, centerX, baseline);
+  layout.cells.forEach((labels, index) => {
+    const left = (index % layout.columns) * style.cellSize;
+    const top = Math.floor(index / layout.columns) * style.cellSize;
+
+    for (const label of labels) {
+      const scale = label.text.length > 1 ? MULTI_CHARACTER_SCALE : 1;
+      const fontSize = label.height * style.cellSize * scale;
+      context.save();
+      // `y` cresce para cima na célula e para baixo no canvas; daí os sinais.
+      context.translate(left + label.x * style.cellSize, top + (1 - label.y) * style.cellSize);
+      context.rotate(-label.angle);
+      context.font = `700 ${fontSize.toFixed(1)}px ${style.fontFamily}`;
+      // Centraliza pela caixa real do glifo, não pela linha de base.
+      const metrics = context.measureText(label.text);
+      const ascent = metrics.actualBoundingBoxAscent;
+      const descent = metrics.actualBoundingBoxDescent;
+      const baseline = (ascent - descent) / 2;
+      context.fillText(label.text, 0, baseline);
+      if (label.underline) {
+        const width = metrics.width * 0.9;
+        const thickness = Math.max(fontSize * 0.07, 1);
+        context.fillRect(-width / 2, baseline + descent + fontSize * 0.08, width, thickness);
+      }
+      context.restore();
+    }
   });
 
   return canvas;

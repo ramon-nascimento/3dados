@@ -1,6 +1,6 @@
 # Guia de integração
 
-> **Estado:** o motor rola **d6** (Etapa 2). Os demais dados, temas, áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
+> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados (Etapa 3). Temas, áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
 
 ## Papéis
 
@@ -102,9 +102,9 @@ Cada cliente anima a própria trajetória. O que é igual para todos é o result
 - `engine.clear()` remove os dados que ficaram na mesa.
 - Chame `engine.destroy()` ao remover o elemento da página. Depois disso a instância não pode ser reutilizada.
 
-## Exemplos por sistema (previsto)
+## Exemplos por sistema
 
-O motor não conhece nenhum sistema. Os exemplos mostram apenas como a aplicação descreverá os dados quando os demais poliedros existirem.
+O motor não conhece nenhum sistema. Os exemplos mostram apenas como a aplicação descreve os dados. A distinção visual por `theme` chega na Etapa 5; até lá o campo é aceito e ignorado.
 
 ```ts
 // D&D: vantagem. A aplicação escolhe o maior.
@@ -125,6 +125,41 @@ engine.roll({
     { type: 'd12', role: 'fear', theme: 'fear' },
   ],
 });
+```
+
+## d100
+
+Um d100 são dois dados na tela. O resultado traz o total e cada parte:
+
+```ts
+const outcome = await engine.roll({ dice: [{ type: 'd100', values: [57] }] }).result;
+if (outcome.status === 'completed') {
+  const [die] = outcome.dice;
+  console.log(die.value); // 57
+  console.log(die.components); // [{ type: 'd100:tens', value: 50, ... }, { type: 'd100:units', value: 7, ... }]
+}
+```
+
+O d10 sozinho vai de 1 a 10: a face "0" vale 10.
+
+## Dados personalizados
+
+Registre o dado uma vez e peça-o pelo tipo. A definição precisa de um sólido convexo em que todas as faces sejam equivalentes por rotação; os detalhes e os motivos de rejeição estão em [API.md](API.md#dados-personalizados).
+
+```ts
+import { createDieDefinition } from '3dados';
+
+const h = 0.5;
+const vertices = [-h, h].flatMap((x) => [-h, h].flatMap((y) => [-h, h].map((z) => ({ x, y, z }))));
+
+engine.registerDie(
+  createDieDefinition('dF', vertices, (face) => {
+    const axis = Math.abs(face.normal.x) > 0.5 ? 0 : Math.abs(face.normal.y) > 0.5 ? 1 : 2;
+    return { value: [1, 0, -1][axis], id: `f${face.index}`, text: ['+', '', '−'][axis] };
+  }),
+);
+
+engine.roll({ dice: [{ type: 'dF', count: 4 }] });
 ```
 
 ## Áudio (previsto)
