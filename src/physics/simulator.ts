@@ -12,7 +12,7 @@ import {
 } from '../core/math';
 import { createSeededRandomSource, randomFloat, type RandomSource } from '../core/random';
 import type { CollisionRecord, DieTrajectory, SimulationRecording } from '../core/trajectory';
-import { DEFAULT_PHYSICS_CONFIG, type PhysicsConfig } from './config';
+import { DEFAULT_PHYSICS_CONFIG, parsePhysicsConfig, type PhysicsConfig } from './config';
 import { loadRapier, type RapierModule } from './rapier';
 import type { RejectionReason, SimulationRequest, SimulationResult } from './types';
 
@@ -65,6 +65,99 @@ const MIN_REPORTED_INTENSITY = 0.01;
 /** Teto da restituição de um dado: acima de 1 ele ganharia energia a cada quique. */
 const MAX_RESTITUTION = 0.95;
 
+/**
+ * Tempo máximo de trabalho seguido, em milissegundos, antes de devolver o
+ * controle ao hospedeiro. Meio quadro a 60 Hz: a aplicação continua
+ * respondendo e desenhando enquanto uma pré-simulação longa roda.
+ */
+export const SLICE_BUDGET_MS = 8;
+
+type Yield = () => Promise<void>;
+
+/**
+ * Devolve o controle ao hospedeiro e retoma logo em seguida, sem o atraso
+ * mínimo do `setTimeout` (4 ms depois de alguns encadeamentos).
+ */
+function createYield(): Yield {
+  const host = globalThis as {
+    setImmediate?: (callback: () => void) => unknown;
+    scheduler?: { yield?: () => Promise<void> };
+    MessageChannel?: new () => {
+      port1: { onmessage: (() => void) | null };
+      port2: { postMessage(message: unknown): void };
+    };
+  };
+  // Node (testes e medições).
+  if (typeof host.setImmediate === 'function') {
+    const { setImmediate } = host;
+    return () => new Promise<void>((resolve) => void setImmediate(resolve));
+  }
+  const { scheduler } = host;
+  if (typeof scheduler?.yield === 'function') return () => scheduler.yield!();
+  if (typeof host.MessageChannel === 'function') {
+    const { port1, port2 } = new host.MessageChannel();
+    const waiting: (() => void)[] = [];
+    port1.onmessage = () => waiting.shift()?.();
+    return () =>
+      new Promise<void>((resolve) => {
+        waiting.push(resolve);
+        port2.postMessage(null);
+      });
+  }
+  return () => new Promise<void>((resolve) => void setTimeout(resolve, 0));
+}
+
+let sharedYield: Yield | undefined;
+
+/**
+ * Fatia uma simulação em trechos de até `SLICE_BUDGET_MS`. Mede só o tempo
+ * trabalhado: as pausas não contam como CPU.
+ */
+class Slicer {
+  /** Soma dos trechos já encerrados, em milissegundos. */
+  private worked = 0;
+  private longest = 0;
+  private sliceStart = performance.now();
+  private readonly budgetMs: number;
+  private readonly aborted: (() => boolean) | undefined;
+
+  constructor(budgetMs: number, aborted: (() => boolean) | undefined) {
+    this.budgetMs = budgetMs;
+    this.aborted = aborted;
+  }
+
+  /** O trecho atual já passou do orçamento. */
+  due(): boolean {
+    return performance.now() - this.sliceStart >= this.budgetMs;
+  }
+
+  /** Devolve o controle ao hospedeiro e abre outro trecho. Lança se a simulação foi abandonada. */
+  async pause(): Promise<void> {
+    this.closeSlice();
+    sharedYield ??= createYield();
+    await sharedYield();
+    this.sliceStart = performance.now();
+    if (this.aborted?.()) {
+      throw new DiceError('SIMULATION_FAILED', 'A simulação foi abandonada.', {
+        details: { aborted: true },
+      });
+    }
+  }
+
+  /** Encerra a medição: tempo trabalhado e o maior trecho sem pausa. */
+  finish(): { cpuTimeMs: number; longestTaskMs: number } {
+    this.closeSlice();
+    this.sliceStart = performance.now();
+    return { cpuTimeMs: this.worked, longestTaskMs: this.longest };
+  }
+
+  private closeSlice(): void {
+    const length = performance.now() - this.sliceStart;
+    this.worked += length;
+    this.longest = Math.max(this.longest, length);
+  }
+}
+
 function randomUnitQuat(rng: RandomSource): Quat {
   const u1 = randomFloat(rng);
   const a = 2 * Math.PI * randomFloat(rng);
@@ -86,6 +179,14 @@ function clampSymmetric(value: number, limit: number): number {
   return limit <= 0 ? 0 : Math.min(Math.max(value, -limit), limit);
 }
 
+export interface PhysicsSimulatorOptions {
+  /**
+   * Tempo de trabalho seguido, em milissegundos, antes de devolver o controle
+   * ao hospedeiro. Padrão: `SLICE_BUDGET_MS`. `Infinity` nunca pausa.
+   */
+  sliceBudgetMs?: number;
+}
+
 /**
  * Pré-simulação: roda a física inteira fora da tela e devolve a trajetória
  * gravada.
@@ -101,37 +202,70 @@ function clampSymmetric(value: number, limit: number): number {
  * específicas (`acceptableFaces`). As primeiras tentativas usam lançamentos
  * comuns; se a face é rara demais para sair por acaso, as seguintes usam um
  * lançamento dirigido, com o dado já voltado para ela e pouco giro.
+ *
+ * A simulação roda na thread principal, fatiada: a cada `SLICE_BUDGET_MS` de
+ * trabalho ela devolve o controle ao navegador e retoma em seguida. Rolagens
+ * comuns terminam antes da primeira pausa.
  */
 export class PhysicsSimulator {
   private readonly rapier: RapierModule;
-  private readonly config: PhysicsConfig;
+  /** Substituído inteiro a cada ajuste: uma simulação em curso segue com o que começou. */
+  private config: Readonly<PhysicsConfig>;
   private readonly hullPoints = new WeakMap<DieDefinition, Float32Array>();
+  private readonly sliceBudgetMs: number;
 
-  constructor(rapier: RapierModule, config: Partial<PhysicsConfig> = {}) {
+  /**
+   * Orçamento de tempo de quem não informa o seu. Os testes de integração o
+   * trocam por `Infinity`: eles avançam o motor quadro a quadro e precisam que
+   * a simulação não dependa da velocidade da máquina.
+   */
+  static defaultSliceBudgetMs = SLICE_BUDGET_MS;
+
+  constructor(
+    rapier: RapierModule,
+    config: Partial<PhysicsConfig> = {},
+    options: PhysicsSimulatorOptions = {},
+  ) {
     this.rapier = rapier;
-    this.config = { ...DEFAULT_PHYSICS_CONFIG, ...config };
+    this.sliceBudgetMs = options.sliceBudgetMs ?? PhysicsSimulator.defaultSliceBudgetMs;
+    this.config = { ...DEFAULT_PHYSICS_CONFIG, ...parsePhysicsConfig(config) };
+  }
+
+  /** Cópia dos parâmetros em vigor. */
+  getConfig(): PhysicsConfig {
+    return { ...this.config };
   }
 
   /**
-   * Assíncrono por contrato: a simulação pode passar a rodar em um Web Worker
-   * sem alterar quem a chama.
+   * Ajusta parâmetros; os ausentes ficam como estão. Vale para as simulações
+   * seguintes. Lança `INVALID_ARGUMENT` se algum valor estiver fora da faixa.
    */
-  // eslint-disable-next-line @typescript-eslint/require-await
+  configure(config: Partial<PhysicsConfig>): PhysicsConfig {
+    this.config = { ...this.config, ...parsePhysicsConfig(config) };
+    return this.getConfig();
+  }
+
+  /**
+   * Assíncrono: devolve o controle ao hospedeiro entre trechos de trabalho, e
+   * pode passar a rodar em um Web Worker sem alterar quem a chama.
+   */
   async simulate(request: SimulationRequest): Promise<SimulationResult> {
-    const startedAt = performance.now();
+    const config = this.config;
+    const slicer = new Slicer(this.sliceBudgetMs, request.aborted);
     const rejections: RejectionReason[] = [];
     // Acertar uma face específica de um dado sem simetria é questão de sorte:
     // o orçamento de tentativas é maior quando há essa restrição.
     const searching = request.acceptableFaces?.some((faces) => faces !== undefined) ?? false;
     const budget = searching
-      ? Math.max(this.config.maxAttempts, this.config.searchAttempts)
-      : this.config.maxAttempts;
+      ? Math.max(config.maxAttempts, config.searchAttempts)
+      : config.maxAttempts;
 
     for (let attempt = 0; attempt < budget; attempt++) {
       const seed = (request.seed + Math.imul(attempt, 0x9e3779b9)) >>> 0;
-      const nudgesPerDie = attempt < this.config.cleanAttempts ? 0 : this.config.maxNudges;
+      const nudgesPerDie = attempt < config.cleanAttempts ? 0 : config.maxNudges;
       const directed = searching && attempt >= NATURAL_SEARCH_ATTEMPTS;
-      const outcome = this.runAttempt(request, seed, nudgesPerDie, directed);
+      if (attempt > 0 && slicer.due()) await slicer.pause();
+      const outcome = await this.runAttempt(request, config, seed, nudgesPerDie, directed, slicer);
       if (outcome.ok) {
         return {
           recording: outcome.recording,
@@ -139,7 +273,7 @@ export class PhysicsSimulator {
           recovered: outcome.recovered,
           attempts: attempt + 1,
           rejections,
-          cpuTimeMs: performance.now() - startedAt,
+          ...slicer.finish(),
         };
       }
       rejections.push(outcome.reason);
@@ -159,14 +293,15 @@ export class PhysicsSimulator {
     return points;
   }
 
-  private runAttempt(
+  private async runAttempt(
     request: SimulationRequest,
+    config: Readonly<PhysicsConfig>,
     seed: number,
     nudgesPerDie: number,
     directed: boolean,
-  ): Attempt {
+    slicer: Slicer,
+  ): Promise<Attempt> {
     const R = this.rapier;
-    const config = this.config;
     const rng = createSeededRandomSource(seed);
     const halfWidth = request.area.width / 2;
     const halfDepth = request.area.depth / 2;
@@ -394,6 +529,8 @@ export class PhysicsSimulator {
 
       const nudges = new Array<number>(dieCount).fill(0);
       record(0);
+      // Montar o mundo e os cascos de todos os dados já é um trecho de trabalho.
+      if (slicer.due()) await slicer.pause();
       let stepCount = 0;
       let allAtRest = false;
 
@@ -449,6 +586,11 @@ export class PhysicsSimulator {
             allAtRest = false;
           }
         });
+
+        // O relógio é consultado a cada passo: com a mesa cheia, um passo custa
+        // décimos de milissegundo, e uma CPU lenta multiplica isso. O mundo é
+        // local a esta tentativa: pausar aqui não muda a física.
+        if (slicer.due()) await slicer.pause();
       }
 
       if (!allAtRest) return { ok: false, reason: 'timeout' };
@@ -491,6 +633,7 @@ export class PhysicsSimulator {
 /** Cria um simulador, carregando o Rapier se necessário. */
 export async function createPhysicsSimulator(
   config: Partial<PhysicsConfig> = {},
+  options: PhysicsSimulatorOptions = {},
 ): Promise<PhysicsSimulator> {
-  return new PhysicsSimulator(await loadRapier(), config);
+  return new PhysicsSimulator(await loadRapier(), config, options);
 }

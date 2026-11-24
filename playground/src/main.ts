@@ -2,6 +2,7 @@ import {
   DiceEngine,
   VERSION,
   createDieDefinition,
+  createSeededRandomSource,
   isDiceError,
   type DieSpec,
   type EffectLevelSetting,
@@ -12,8 +13,11 @@ import {
   type RollRequest,
 } from '3dados';
 import { createAudioPanel } from './audio-panel';
+import { runBenchmark, toMarkdown, type BenchResult } from './benchmark';
 import { PLAYGROUND_PRESETS, createEffectsPanel } from './effects-panel';
 import { createIntegrationPanel } from './integration-panel';
+import { createPerformancePanel } from './performance-panel';
+import { createPhysicsPanel } from './physics-panel';
 import { createThemePanel, type ThemePanel } from './theme-panel';
 
 interface Diagnostic {
@@ -165,17 +169,34 @@ interface DisplayOptions {
   presentation: Presentation;
   quality: QualitySetting;
   concurrency: RollConcurrency;
+  maxFps?: number;
 }
 
-/** Opções de criação do motor, lidas da URL (`?presentation=tray&quality=low&concurrency=replace`). */
+/**
+ * Opções de criação do motor, lidas da URL
+ * (`?presentation=tray&quality=low&concurrency=replace&maxFps=30`).
+ */
 function readEngineOptions(): DisplayOptions {
   const params = new URLSearchParams(location.search);
   const presentation = params.get('presentation') === 'tray' ? 'tray' : 'overlay';
   const quality = params.get('quality');
+  const maxFps = Number(params.get('maxFps'));
   return {
     presentation,
     quality: quality === 'low' || quality === 'medium' || quality === 'high' ? quality : 'auto',
     concurrency: params.get('concurrency') === 'replace' ? 'replace' : 'queue',
+    ...(maxFps > 0 ? { maxFps } : {}),
+  };
+}
+
+/** Modo de benchmark (`?bench=run`): quantas rolagens por caso e quais casos. */
+function readBenchOptions(): { rolls: number; only: string[] } | undefined {
+  const params = new URLSearchParams(location.search);
+  if (params.get('bench') !== 'run') return undefined;
+  const rolls = Number(params.get('benchRolls'));
+  return {
+    rolls: Number.isInteger(rolls) && rolls > 0 ? rolls : 20,
+    only: (params.get('benchCases') ?? '').split(',').filter(Boolean),
   };
 }
 
@@ -184,17 +205,23 @@ function setupDisplayPanel(options: DisplayOptions) {
   const presentation = byTestId<HTMLSelectElement>('presentation-select');
   const quality = byTestId<HTMLSelectElement>('quality-select');
   const concurrency = byTestId<HTMLSelectElement>('concurrency-select');
+  const maxFps = byTestId<HTMLSelectElement>('maxfps-select');
   presentation.value = options.presentation;
   quality.value = options.quality;
   concurrency.value = options.concurrency;
+  maxFps.value = options.maxFps === undefined ? '' : String(options.maxFps);
   const reload = () => {
     const params = new URLSearchParams(location.search);
     params.set('presentation', presentation.value);
     params.set('quality', quality.value);
     params.set('concurrency', concurrency.value);
+    if (maxFps.value) params.set('maxFps', maxFps.value);
+    else params.delete('maxFps');
+    // Mudar a exibição sai do modo de benchmark.
+    params.delete('bench');
     location.search = params.toString();
   };
-  for (const select of [presentation, quality, concurrency]) {
+  for (const select of [presentation, quality, concurrency, maxFps]) {
     select.addEventListener('change', reload);
   }
 }
@@ -290,18 +317,22 @@ async function start(): Promise<void> {
 
   const engineOptions = readEngineOptions();
   setupDisplayPanel(engineOptions);
+  const bench = readBenchOptions();
+  const overlay = byTestId('dice-overlay');
 
   let engine: DiceEngine;
   try {
-    engine = await DiceEngine.create(byTestId('dice-overlay'), {
+    engine = await DiceEngine.create(overlay, {
       ...engineOptions,
       // assets/ é a pasta pública do playground (playground/vite.config.ts).
       // `?audio=off` cria o motor com o áudio desligado (usado nos testes).
       audio: {
         baseUrl: '/sounds/',
-        enabled: new URLSearchParams(location.search).get('audio') !== 'off',
+        enabled: !bench && new URLSearchParams(location.search).get('audio') !== 'off',
       },
-      effects: { level: readEffectsLevel() },
+      effects: { level: bench ? 'full' : readEffectsLevel() },
+      // Benchmark: sem espera entre rolagens e com os mesmos lançamentos a cada execução.
+      ...(bench ? { concurrency: 'replace', rng: createSeededRandomSource(20261124) } : {}),
     });
     for (const { name, preset } of PLAYGROUND_PRESETS) engine.effects.register(name, preset);
     engine.registerDie(createFudgeDie());
@@ -311,7 +342,6 @@ async function start(): Promise<void> {
     rollButton.disabled = true;
     return;
   }
-  byTestId('quality-effective').textContent = engine.quality;
 
   // O painel avisa quando a lista de temas muda (inclusive ao ser criado).
   const themes: { panel?: ThemePanel } = {};
@@ -322,14 +352,17 @@ async function start(): Promise<void> {
   createAudioPanel(engine);
   const effectsPanel = createEffectsPanel(engine);
   createIntegrationPanel(engine);
+  createPhysicsPanel(engine);
+  createPerformancePanel(engine, overlay);
   setStatus('pronto');
 
   // Acesso para depuração e para os testes de navegador, que leem a orientação
   // real das malhas e a comparam com o resultado informado.
-  const hooks: { engine: DiceEngine; lastOutcome: RollOutcome | null } = {
-    engine,
-    lastOutcome: null,
-  };
+  const hooks: {
+    engine: DiceEngine;
+    lastOutcome: RollOutcome | null;
+    benchmark: BenchResult | null;
+  } = { engine, lastOutcome: null, benchmark: null };
   Object.assign(window, { __3dados: hooks });
 
   let collisions = 0;
@@ -373,6 +406,39 @@ async function start(): Promise<void> {
     resetReadout();
     setStatus('pronto');
   });
+
+  // O benchmark roda em uma página própria: recarrega com `?bench=run`.
+  const benchOutput = byTestId<HTMLTextAreaElement>('bench-output');
+  const benchCopy = byTestId<HTMLButtonElement>('bench-copy');
+  byTestId('bench-run').addEventListener('click', () => {
+    const params = new URLSearchParams(location.search);
+    params.set('bench', 'run');
+    location.search = params.toString();
+  });
+  benchCopy.addEventListener('click', () => {
+    void navigator.clipboard.writeText(benchOutput.value);
+  });
+  if (bench) {
+    rollButton.disabled = true;
+    benchOutput.hidden = false;
+    try {
+      const result = await runBenchmark(engine, overlay, {
+        ...bench,
+        onProgress: (text) => {
+          setStatus(`benchmark: ${text}`);
+          benchOutput.value = text;
+        },
+      });
+      hooks.benchmark = result;
+      benchOutput.value = `${toMarkdown(result)}\n\n${JSON.stringify(result, null, 2)}`;
+      benchCopy.hidden = false;
+      setStatus('benchmark concluído', 'ok');
+    } catch (error) {
+      setStatus(`benchmark falhou — ${describeError(error)}`, 'bad');
+    } finally {
+      rollButton.disabled = false;
+    }
+  }
 }
 
 void start();

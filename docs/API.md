@@ -2,9 +2,9 @@
 
 A API é `0.x`: pode mudar entre versões menores até a 1.0. O único ponto de entrada suportado é o módulo `3dados`.
 
-Todas as funcionalidades das Etapas 1 a 8 estão implementadas. O que fica de fora do motor está em [Fora do escopo](#fora-do-escopo).
+Todas as funcionalidades das Etapas 1 a 9 estão implementadas. O que fica de fora do motor está em [Fora do escopo](#fora-do-escopo).
 
-## Disponível hoje (0.8.0)
+## Disponível hoje (0.9.0)
 
 Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
@@ -16,7 +16,8 @@ import { DiceEngine, createCryptoRandomSource } from '3dados';
 const engine = await DiceEngine.create(container, {
   diceSizePx: 72, // tamanho aproximado de um dado na tela, em px CSS
   maxPixelRatio: 2, // teto de densidade de pixels do canvas
-  physics: {}, // Partial<PhysicsConfig>
+  maxFps: 60, // teto de quadros por segundo, de 10 a 240; ausente: a taxa do monitor
+  physics: {}, // Partial<PhysicsConfig>; muda depois com setPhysics
   rng: createCryptoRandomSource(), // fonte dos valores no modo autônomo
   presentation: 'overlay', // | 'tray'
   quality: 'auto', // | 'low' | 'medium' | 'high'
@@ -29,7 +30,7 @@ const engine = await DiceEngine.create(container, {
 });
 ```
 
-`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `audio`, `effects`, `concurrency`, `queue` ou `remote` forem inválidos (campo em `details.path`). `presentation`, `quality`, `theme`, `audio` e `effects` estão descritos em [Aparência](#aparência), [Temas](#temas), [Áudio](#áudio) e [Efeitos](#efeitos).
+`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `maxFps`, `physics`, `audio`, `effects`, `concurrency`, `queue` ou `remote` forem inválidos (campo em `details.path`). `presentation`, `quality`, `theme`, `audio` e `effects` estão descritos em [Aparência](#aparência), [Temas](#temas), [Áudio](#áudio) e [Efeitos](#efeitos).
 
 | Método                         | Efeito                                                                                                                  |
 | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
@@ -42,7 +43,9 @@ const engine = await DiceEngine.create(container, {
 | `registerTheme(theme)`         | Registra ou substitui um tema. Lança `DiceError` `INVALID_THEME` se for inválido.                                       |
 | `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.                                        |
 | `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                                            |
-| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.                                     |
+| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`). Com `auto`, pode descer durante o uso.                         |
+| `setPhysics(config)`           | Ajusta parâmetros da física para as rolagens seguintes e devolve os que estão em vigor. Ver [Física](#física).          |
+| `getPhysics(): PhysicsConfig`  | Cópia dos parâmetros da física em vigor.                                                                                |
 | `audio: DiceAudioControls`     | Controles do áudio. Ver [Áudio](#áudio).                                                                                |
 | `effects: DiceEffectsControls` | Controles dos efeitos visuais. Ver [Efeitos](#efeitos).                                                                 |
 | `remote: DiceRemoteControls`   | Mensagens de um servidor externo. Ver [Mensagens externas](#mensagens-externas-multiplayer).                            |
@@ -228,17 +231,21 @@ As faces não precisam ser equivalentes entre si. Em um dado sem simetria entre 
 
 ### Eventos
 
-| Evento          | Payload                                                             | Quando                                             |
-| --------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
-| `rollStarted`   | `{ rollId, dice: [{ dieId, type, role? }], simulation, metadata? }` | A animação começa.                                 |
-| `diceCollided`  | `{ rollId, dieId, other, intensity, timeMs }`                       | Um dado começa a tocar outro dado ou a superfície. |
-| `diceSettled`   | `{ rollId, dieId, value, faceId }`                                  | Um dado para.                                      |
-| `rollCompleted` | `RollCompleted`                                                     | Todos pararam e os valores foram verificados.      |
-| `rollCancelled` | `RollCancelled`                                                     | A rolagem foi cancelada.                           |
-| `rollFailed`    | `RollFailed`                                                        | A rolagem falhou, inclusive por pedido inválido.   |
+| Evento            | Payload                                                             | Quando                                             |
+| ----------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
+| `rollStarted`     | `{ rollId, dice: [{ dieId, type, role? }], simulation, metadata? }` | A animação começa.                                 |
+| `diceCollided`    | `{ rollId, dieId, other, intensity, timeMs }`                       | Um dado começa a tocar outro dado ou a superfície. |
+| `diceSettled`     | `{ rollId, dieId, value, faceId }`                                  | Um dado para.                                      |
+| `rollCompleted`   | `RollCompleted`                                                     | Todos pararam e os valores foram verificados.      |
+| `rollCancelled`   | `RollCancelled`                                                     | A rolagem foi cancelada.                           |
+| `rollFailed`      | `RollFailed`                                                        | A rolagem falhou, inclusive por pedido inválido.   |
+| `contextLost`     | `{ activeRollId }`                                                  | O navegador tirou o contexto gráfico.              |
+| `contextRestored` | `{ lostForMs }`                                                     | O contexto voltou e a mesa foi redesenhada.        |
+| `qualityChanged`  | `{ from, to, fps, frameMs: { p50, p95, max } }`                     | A qualidade automática desceu um nível.            |
 
 - Uma rolagem na fila só emite `rollStarted` quando sai dela. Cancelada enquanto espera, emite apenas `rollCancelled`.
-- `simulation` é `{ attempts, cpuTimeMs }`: medições reais da pré-simulação daquela rolagem.
+- `simulation` é `{ attempts, cpuTimeMs, longestTaskMs }`: medições reais da pré-simulação daquela rolagem. `cpuTimeMs` é o trabalho total; `longestTaskMs` é o maior trecho em que ela segurou a thread sem devolver o controle ao navegador (ver [Física](#física)).
+- `contextLost`, `contextRestored` e `qualityChanged` estão descritos em [Desempenho e estabilidade](#desempenho-e-estabilidade).
 - `other` é `{ kind: 'die', dieId }` ou `{ kind: 'surface' }` (mesa e paredes).
 - `intensity` vai de 0 a 1: variação de velocidade causada pelo impacto, relativa à velocidade de lançamento. Contatos contínuos de um dado rolando não geram eventos. O áudio reconstrói os tombos a partir da trajetória gravada (ver [Áudio](#áudio)); o evento não mudou.
 - Uma exceção lançada por um ouvinte é registrada no console e não interrompe o motor.
@@ -290,6 +297,35 @@ interface PhysicsConfig {
 
 Os padrões foram calibrados por medição; ver [BENCHMARKS.md](BENCHMARKS.md).
 
+```ts
+import { DEFAULT_PHYSICS_CONFIG, PHYSICS_LIMITS } from '3dados';
+
+engine.setPhysics({ gravity: 90, restitution: 0.6 }); // devolve a PhysicsConfig em vigor
+engine.getPhysics(); // cópia
+engine.setPhysics(DEFAULT_PHYSICS_CONFIG); // volta aos padrões
+```
+
+- `setPhysics` aceita ajustes parciais; o que não é informado fica como está. Vale a partir da rolagem seguinte: a que estiver sendo simulada termina com os parâmetros com que começou.
+- Cada parâmetro tem uma faixa, em `PHYSICS_LIMITS` (`{ min, max, integer? }`). Fora dela, ou com um campo desconhecido, `setPhysics` e `DiceEngine.create` lançam `INVALID_ARGUMENT` com o campo em `details.path` (`physics.gravity`), sem mudar nada.
+- A física muda a trajetória e a duração, nunca o valor: ele é decidido antes da animação.
+
+| Parâmetro                           | Faixa aceita |
+| ----------------------------------- | ------------ |
+| `gravity`                           | 1 a 2.000    |
+| `timestep`                          | 1/480 a 1/30 |
+| `maxDuration`                       | 0,05 a 30    |
+| `friction`, `surfaceFriction`       | 0 a 2        |
+| `restitution`, `surfaceRestitution` | 0 a 0,95     |
+| `throwSpeed`                        | 1 a 200      |
+| `throwSpin`                         | 0 a 100      |
+| `linearDamping`, `angularDamping`   | 0 a 5        |
+| `maxAttempts`                       | 1 a 100      |
+| `cleanAttempts`                     | 0 a 100      |
+| `maxNudges`                         | 0 a 20       |
+| `searchAttempts`                    | 1 a 500      |
+
+**A pré-simulação não trava a página.** Ela roda na thread principal em trechos de até 8 ms: passado esse tempo, devolve o controle ao navegador (que desenha, trata cliques e roda a aplicação) e retoma em seguida. Uma rolagem comum termina antes da primeira pausa. `longestTaskMs`, em `rollStarted` e em `getStats()`, é o maior trecho medido. Cancelar uma rolagem que ainda está sendo simulada interrompe a simulação na pausa seguinte. Decisão e medições em [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md).
+
 ### Recuperação
 
 Uma rolagem só é aceita com todos os dados assentados sobre a mesa. As primeiras `cleanAttempts` tentativas são descartadas ao menor problema. A partir daí, um dado que para inclinado ou sobre outro recebe um empurrão dentro da própria simulação e volta a rolar; no resultado ele vem com `recovered: true`.
@@ -313,7 +349,7 @@ Devolve o estado das malhas no instante da chamada, inclusive durante a animaç�
 
 ### Aparência
 
-`presentation` e `quality` são opções de criação. Para mudá-las, crie outro motor.
+`presentation`, `quality` e `maxFps` são opções de criação. Para mudá-las, crie outro motor.
 
 | `presentation`     | Efeito                                                                                 |
 | ------------------ | -------------------------------------------------------------------------------------- |
@@ -326,7 +362,9 @@ Devolve o estado das malhas no instante da chamada, inclusive durante a animaç�
 | `medium`  | 1024 px | até 1,5             | sim             | não                            |
 | `high`    | 2048 px | até `maxPixelRatio` | sim             | só com `presentation: 'tray'`  |
 
-`auto` (padrão) escolhe `high`, ou `low` quando o WebGL roda por software (SwiftShader, llvmpipe e afins, detectados por `WEBGL_debug_renderer_info`). `engine.quality` informa a escolha.
+`auto` (padrão) começa em `high`, ou em `low` quando o WebGL roda por software (SwiftShader, llvmpipe e afins, detectados por `WEBGL_debug_renderer_info`), e pode descer durante o uso; ver [Desempenho e estabilidade](#desempenho-e-estabilidade). `engine.quality` informa o nível em vigor. O antisserrilhado é decidido na criação do contexto e não muda com o nível.
+
+Os efeitos acompanham a qualidade: o teto de partículas (`effects.maxParticles`) vale inteiro em `high`, 60% em `medium` e 30% em `low`.
 
 Sem transmissão, vidro e cristal são desenhados com transparência comum. No overlay a transmissão nunca é usada: o canvas não enxerga a página por baixo, e o vidro ficaria leitoso em vez de deixar a aplicação aparecer.
 
@@ -494,7 +532,7 @@ Efeitos visuais sobre os dados ou sobre a mesa: brilhos, auras, rastros, explos�
 const engine = await DiceEngine.create(container, {
   effects: {
     level: 'auto', // | 'full' | 'reduced' | 'off'. Padrão: 'auto'
-    maxParticles: 2000, // teto de partículas vivas somando todos os efeitos, de 0 a 20.000
+    maxParticles: 2000, // teto de partículas vivas, de 0 a 20.000; a qualidade do render o reduz
   },
 });
 
@@ -569,7 +607,7 @@ Cada efeito tem uma cor e uma duração padrão; `trail` dura até o dado parar 
 | `register(name, preset)`  | Registra ou substitui um preset: `{ base, color?, durationMs?, intensity? }`, com `base` um efeito interno. Não pode usar o nome de um efeito interno.           |
 | `has(name)`               | Se o nome é um efeito interno ou um preset registrado.                                                                                                           |
 | `stopAll()`               | Interrompe todos os efeitos e libera os recursos.                                                                                                                |
-| `getStats(): EffectStats` | `level`, `active`, `particles`, `objects` (na cena), `created` e `disposed` (geometrias, materiais e texturas) e `skipped`.                                      |
+| `getStats(): EffectStats` | `level`, `active`, `particles`, `particleLimit`, `objects` (na cena), `created` e `disposed` (geometrias, materiais e texturas) e `skipped`.                     |
 
 `EffectHandle` tem `id` e `stop()`. `trigger` devolve `null`, sem lançar, quando o nível é `off`, o efeito é desconhecido (aviso no console, uma vez por nome) ou não há alvo na mesa; o disparo conta em `skipped`. Opções inválidas lançam `DiceError` `INVALID_ARGUMENT` com o campo na mensagem (`options.intensity: esperado um número de 0 a 2.`); no pedido, um gatilho inválido faz a rolagem falhar com `INVALID_REQUEST` (`effects[0].on: esperado "start", "settled", "completed".`). Um nome de efeito desconhecido no pedido não é erro: só avisa.
 
@@ -599,7 +637,7 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.8.0'
+import { VERSION } from '3dados'; // '0.9.0'
 ```
 
 ### Rolagens simultâneas
@@ -746,7 +784,8 @@ interface EngineState {
   diceOnTable: number; // dados físicos (um d100 conta dois)
   concurrency: 'queue' | 'replace';
   presentation: 'overlay' | 'tray';
-  quality: 'low' | 'medium' | 'high';
+  quality: 'low' | 'medium' | 'high'; // efetiva; com `auto`, pode descer
+  context: 'active' | 'lost'; // `lost`: o navegador tirou o contexto gráfico
   defaultTheme: string;
   themes: readonly string[];
   dieTypes: readonly string[]; // inclusive os personalizados
@@ -770,10 +809,12 @@ interface EngineStats {
     queuePeak: number; // maior tamanho que a fila já teve
   };
   simulation: {
-    last: { attempts: number; cpuTimeMs: number } | null;
+    last: { attempts: number; cpuTimeMs: number; longestTaskMs: number } | null;
     totalAttempts: number;
     totalCpuTimeMs: number;
+    longestTaskMs: number; // o maior trecho de todas as pré-simulações
   };
+  render: RenderStats; // ver "Desempenho e estabilidade"
   remote: RemoteStats;
   audio: AudioStats;
   effects: EffectStats;
@@ -781,6 +822,71 @@ interface EngineStats {
 ```
 
 Todos os números são contados ou medidos; nenhum é estimado.
+
+### Desempenho e estabilidade
+
+**Medições do render.** `getStats().render`:
+
+```ts
+interface RenderStats {
+  active: boolean; // o laço de render está ligado (rolagem animando ou efeito em movimento)
+  frames: number; // quadros desenhados pelo laço desde a criação
+  current: FrameSession | null; // o trecho de animação em curso
+  lastSession: FrameSession | null; // o último trecho encerrado
+  drawCalls: number; // do último quadro, com a passada de sombras
+  triangles: number; // do último quadro
+  geometries: number; // vivas na GPU, pela contagem do three
+  textures: number;
+  canvas: { width: number; height: number; pixelRatio: number }; // em pixels do dispositivo
+  quality: 'low' | 'medium' | 'high';
+  qualitySetting: 'auto' | 'low' | 'medium' | 'high';
+  maxFps: number | null;
+  context: 'active' | 'lost';
+  contextLosses: number;
+  contextRestores: number;
+  qualityDrops: number; // vezes em que a qualidade automática desceu
+}
+
+interface FrameSession {
+  frames: number; // quadros desenhados no trecho
+  durationMs: number;
+  fps: number;
+  frameMs: { p50: number; p95: number; max: number }; // intervalo entre quadros
+  cpuMs: { p50: number; p95: number; max: number }; // CPU por quadro; não inclui a GPU
+}
+```
+
+Um trecho de animação vai do instante em que o laço de render liga até ele desligar. Os cinco primeiros quadros de cada trecho ficam fora das medições (compilam shaders e enviam texturas), e intervalos de mais de 1 s também (a aba estava em segundo plano). O motor não mede o tempo de GPU (a extensão que o informaria não existe em todos os navegadores): o sinal de uma GPU sobrecarregada é o intervalo entre quadros.
+
+**Sem animação, nada roda.** O laço de render só existe enquanto há rolagem animando ou efeito em movimento; com os dados parados o motor não pede quadros.
+
+**Teto de quadros.** `maxFps` (de 10 a 240) limita quantos quadros o motor desenha por segundo. A animação dura o mesmo tempo, com menos quadros; os eventos saem no quadro desenhado seguinte. Serve para poupar GPU e bateria.
+
+**Qualidade automática.** Com `quality: 'auto'` em uma GPU de verdade, o motor mede os quadros de cada trecho de animação. Quando dois trechos seguidos ficam abaixo de 25 quadros por segundo (intervalo médio acima de 40 ms), a qualidade desce um nível: `high` → `medium` → `low`. Só contam trechos com pelo menos 10 quadros medidos e meio segundo. A troca acontece com a mesa vazia (no início da rolagem seguinte), para nada mudar à vista, e é avisada por `qualityChanged`, com a taxa (`fps`) e o intervalo entre quadros (`frameMs`) da animação que a motivou. A qualidade nunca sobe sozinha, e um nível fixo nunca muda. Com `maxFps` abaixo de 43, o limite sobe para uma vez e meia o intervalo do teto, mais 5 ms.
+
+```ts
+engine.on('qualityChanged', ({ from, to, fps }) => {
+  console.info(
+    `qualidade ${from} → ${to}; a animação ficou em ${fps.toFixed(0)} quadros por segundo`,
+  );
+});
+```
+
+**Perda do contexto gráfico.** O navegador pode tirar o contexto WebGL de uma página (driver reiniciado, troca de GPU, falta de memória, muitos contextos abertos). O motor trata isso sem intervenção da aplicação:
+
+- `contextLost` é emitido, com a rolagem que estava em andamento (`activeRollId`, ou `null`). `getState().context` passa a `lost`. Nada é desenhado.
+- A rolagem em andamento **segue e conclui** com os valores oficiais: o valor foi decidido antes da animação e a verificação final lê a orientação das malhas na cena, não a GPU. Rolagens pedidas sem contexto também concluem. A aplicação recebe os resultados na hora de sempre.
+- Os efeitos visuais em andamento são interrompidos.
+- Quando o navegador devolve o contexto, o motor refaz o que estava na GPU, redesenha os dados onde pararam e emite `contextRestored`, com o tempo sem contexto (`lostForMs`).
+
+Se o navegador nunca devolver o contexto, o motor continua entregando resultados, sem imagem. A aplicação pode usar `contextLost` para mostrar os valores de outra forma enquanto isso.
+
+```ts
+engine.on('contextLost', () => mostrarResultadosEmTexto(true));
+engine.on('contextRestored', () => mostrarResultadosEmTexto(false));
+```
+
+**Limites medidos.** Os limites de uso (dados por rolagem, área por dado, tempo de pré-simulação) e o hardware em que foram medidos estão em [BENCHMARKS.md](BENCHMARKS.md#limites).
 
 ### Tipos públicos
 

@@ -62,12 +62,20 @@ import {
 // Tipos das assinaturas públicas vêm de arquivos sem three nem Rapier: assim
 // os `.d.ts` publicados não exigem `@types/three` nem os tipos do Rapier.
 import type { DiceEffectsControls, EffectsEnvironment, EffectsOptions } from '../effects/types';
-import type { PhysicsConfig } from '../physics/config';
+import { DEFAULT_PHYSICS_CONFIG, parsePhysicsConfig, type PhysicsConfig } from '../physics/config';
 import { createPhysicsSimulator } from '../physics/simulator';
 import type { SimulationRequest, SimulationResult } from '../physics/types';
 import { DiceRenderer } from '../renderer/dice-renderer';
-import type { Presentation, QualitySetting, RenderQuality, SceneObject } from '../renderer/types';
+import type {
+  Presentation,
+  QualitySetting,
+  RenderQuality,
+  RenderStats,
+  RendererEvent,
+  SceneObject,
+} from '../renderer/types';
 import {
+  parseMaxFps,
   parseRollOptions,
   type ParsedRollOptions,
   type RemoteOptions,
@@ -82,15 +90,22 @@ export interface DiceEngineOptions {
   diceSizePx?: number;
   /** Teto para a densidade de pixels do canvas. Padrão: 2. */
   maxPixelRatio?: number;
-  /** Ajustes da simulação física. */
+  /**
+   * Teto de quadros por segundo, de 10 a 240. Padrão: sem teto (a taxa do
+   * monitor). Reduz o uso de GPU e de bateria; a animação dura o mesmo tempo.
+   */
+  maxFps?: number;
+  /** Ajustes da simulação física. Podem mudar depois com `setPhysics`. */
   physics?: Partial<PhysicsConfig>;
   /** Fonte dos valores no modo autônomo. Padrão: `crypto.getRandomValues`. */
   rng?: RandomSource;
   /** `overlay` (padrão): canvas transparente. `tray`: bandeja visível. */
   presentation?: Presentation;
   /**
-   * Custo de GPU. `auto` (padrão) usa `high`, ou `low` quando o WebGL é por
-   * software. Só `high` usa transmissão em vidro e cristal.
+   * Custo de GPU. `auto` (padrão) começa em `high`, ou em `low` quando o
+   * WebGL é por software, e desce um nível se duas animações seguidas ficarem
+   * abaixo de 25 quadros por segundo (evento `qualityChanged`). Um nível fixo nunca muda. Só `high` usa
+   * transmissão em vidro e cristal.
    */
   quality?: QualitySetting;
   /** Tema padrão. É registrado e passa a valer para dados sem `theme`. */
@@ -125,9 +140,13 @@ export interface RollHandle {
 /** O que o motor precisa de um renderer. Implementado por `DiceRenderer`. */
 export interface EngineRenderer {
   readonly area: { width: number; depth: number };
-  /** Qualidade efetiva do render. */
+  /** Qualidade efetiva do render. Pode descer quando a pedida é `auto`. */
   readonly quality: RenderQuality;
   readonly presentation: Presentation;
+  /** Recebe os avisos de contexto perdido ou restaurado e de mudança de qualidade. */
+  setListener(listener: (event: RendererEvent) => void): void;
+  /** Medições do render neste instante. */
+  getStats(): RenderStats;
   /** Carrega o que as aparências precisam (fontes) antes de os dados aparecerem. */
   prepare(appearances: readonly ResolvedAppearance[]): Promise<void>;
   addDie(dieId: DieId, definition: DieDefinition, appearance: ResolvedAppearance): void;
@@ -159,7 +178,12 @@ export interface TableDie {
 /** O que o motor precisa da física. Implementado por `PhysicsSimulator`. */
 export interface EngineSimulator {
   simulate(request: SimulationRequest): Promise<SimulationResult>;
+  /** Ajusta os parâmetros das próximas simulações. Ausente: o simulador não é ajustável. */
+  configure?(config: Partial<PhysicsConfig>): unknown;
 }
+
+/** Fração do teto de partículas dos efeitos em cada qualidade de render. */
+const PARTICLE_SCALE: Readonly<Record<RenderQuality, number>> = { high: 1, medium: 0.6, low: 0.3 };
 
 /** Um dado na mesa, com o que é preciso para redesenhá-lo se o tema mudar. */
 interface TableEntry {
@@ -207,6 +231,8 @@ export interface EngineDependencies {
   audio?: DiceAudio;
   /** Opções dos efeitos. Ausente: nível `off`. */
   effects?: EffectsOptions;
+  /** Parâmetros da física em vigor no simulador, já validados. Padrão: os do motor. */
+  physics?: PhysicsConfig;
   /** Preferência de movimento do sistema. Ausente: nenhuma. */
   effectsEnvironment?: EffectsEnvironment;
   /** Temporizador para remover efeitos parados e para a fila. Padrão: `setTimeout`. */
@@ -303,10 +329,16 @@ export class DiceEngine {
     failed: 0,
     recovered: 0,
     queuePeak: 0,
-    lastSimulation: null as { attempts: number; cpuTimeMs: number } | null,
+    lastSimulation: null as {
+      attempts: number;
+      cpuTimeMs: number;
+      longestTaskMs: number;
+    } | null,
     totalAttempts: 0,
     totalCpuTimeMs: 0,
+    longestTaskMs: 0,
   };
+  private physics: PhysicsConfig;
   /** O laço de render está ligado (rolagem animando ou efeito em movimento). */
   private looping = false;
   /** Cancela a remoção agendada do próximo efeito parado. */
@@ -318,6 +350,7 @@ export class DiceEngine {
     this.deps = deps;
     this.setTimer = deps.setTimer ?? defaultSetTimer;
     this.rollOptions = deps.rolls ?? parseRollOptions({});
+    this.physics = { ...(deps.physics ?? DEFAULT_PHYSICS_CONFIG) };
     const clock = deps.clock ?? (() => Date.now());
     this.remoteChannel = new RemoteChannel(
       {
@@ -342,6 +375,10 @@ export class DiceEngine {
       deps.effectsEnvironment ?? NO_MOTION_PREFERENCE,
       this.effectsHost(),
     );
+    this.effectsLayer.setParticleScale(PARTICLE_SCALE[deps.renderer.quality]);
+    deps.renderer.setListener((event) => {
+      this.onRendererEvent(event);
+    });
   }
 
   /** Cria um motor dentro de `container`, desenhando em um canvas transparente. */
@@ -354,15 +391,18 @@ export class DiceEngine {
     const audioOptions = parseAudioOptions(options.audio);
     const effectsOptions = parseEffectsOptions(options.effects);
     const rollOptions = parseRollOptions(options);
+    const maxFps = parseMaxFps(options.maxFps);
+    const physics = { ...DEFAULT_PHYSICS_CONFIG, ...parsePhysicsConfig(options.physics) };
     const presentation = options.presentation ?? 'overlay';
     const renderer = new DiceRenderer(container, {
       diceSizePx: options.diceSizePx ?? 72,
       maxPixelRatio: options.maxPixelRatio ?? 2,
       quality: options.quality ?? 'auto',
       presentation,
+      ...(maxFps === undefined ? {} : { maxFps }),
     });
     try {
-      const simulator = await createPhysicsSimulator(options.physics);
+      const simulator = await createPhysicsSimulator(physics);
       await warmUp(simulator);
       const engine = new DiceEngine({
         renderer,
@@ -377,6 +417,7 @@ export class DiceEngine {
         effects: effectsOptions,
         effectsEnvironment: browserEffectsEnvironment(),
         rolls: rollOptions,
+        physics,
       });
       if (theme) {
         engine.registerTheme(theme);
@@ -455,6 +496,7 @@ export class DiceEngine {
       concurrency: this.rollOptions.concurrency,
       presentation: this.deps.renderer.presentation,
       quality: this.deps.renderer.quality,
+      context: this.deps.renderer.getStats().context,
       defaultTheme: this.defaultThemeId,
       themes: [...this.themes.keys()],
       dieTypes: this.deps.registry.types(),
@@ -484,7 +526,9 @@ export class DiceEngine {
         last: c.lastSimulation ? { ...c.lastSimulation } : null,
         totalAttempts: c.totalAttempts,
         totalCpuTimeMs: c.totalCpuTimeMs,
+        longestTaskMs: c.longestTaskMs,
       },
+      render: this.deps.renderer.getStats(),
       remote: this.remoteChannel.getStats(),
       audio: this.audioPlayer.getStats(),
       effects: this.effectsLayer.getStats(),
@@ -563,9 +607,31 @@ export class DiceEngine {
     return this.effectsLayer;
   }
 
-  /** Qualidade efetiva do render, depois de resolver `auto`. */
+  /** Qualidade efetiva do render, depois de resolver `auto`. Pode descer durante o uso. */
   get quality(): RenderQuality {
     return this.deps.renderer.quality;
+  }
+
+  /** Cópia dos parâmetros da física em vigor. */
+  getPhysics(): PhysicsConfig {
+    return { ...this.physics };
+  }
+
+  /**
+   * Ajusta parâmetros da física; os ausentes ficam como estão. Vale para as
+   * rolagens seguintes: a que estiver sendo simulada termina com os anteriores.
+   * Devolve os parâmetros em vigor. Lança `DiceError` `INVALID_ARGUMENT`, com
+   * o campo em `details.path`, se algum valor estiver fora da faixa
+   * (`PHYSICS_LIMITS`).
+   *
+   * A física muda a trajetória e a duração; nunca o valor de uma rolagem.
+   */
+  setPhysics(config: Partial<PhysicsConfig>): PhysicsConfig {
+    if (this.destroyed) throw new DiceError('ENGINE_DESTROYED', 'O motor já foi destruído.');
+    const next = { ...this.physics, ...parsePhysicsConfig(config) };
+    this.deps.simulator.configure?.(next);
+    this.physics = next;
+    return this.getPhysics();
   }
 
   /**
@@ -756,16 +822,21 @@ export class DiceEngine {
           area: renderer.area,
           seed: plan.seed,
           ...(acceptableFaces.some((faces) => faces !== undefined) ? { acceptableFaces } : {}),
+          // Rolagem cancelada no meio de uma simulação longa: não segue gastando CPU.
+          aborted: () => active.finished,
         }),
         renderer.prepare(appearances),
       ]);
       if (active.finished) return;
-      this.counters.lastSimulation = {
+      const measured = {
         attempts: simulation.attempts,
         cpuTimeMs: simulation.cpuTimeMs,
+        longestTaskMs: simulation.longestTaskMs,
       };
+      this.counters.lastSimulation = measured;
       this.counters.totalAttempts += simulation.attempts;
       this.counters.totalCpuTimeMs += simulation.cpuTimeMs;
+      this.counters.longestTaskMs = Math.max(this.counters.longestTaskMs, simulation.longestTaskMs);
 
       const offsets = this.reorient(plan, simulation);
       const { recording } = simulation;
@@ -809,7 +880,7 @@ export class DiceEngine {
             return { dieId, type, ...(role === undefined ? {} : { role }) };
           }),
         ),
-        simulation: { attempts: simulation.attempts, cpuTimeMs: simulation.cpuTimeMs },
+        simulation: { ...measured },
         ...metadataOf(plan.metadata),
       });
       if (active.finished) return;
@@ -1045,6 +1116,34 @@ export class DiceEngine {
   private settle(active: ActiveRoll): void {
     active.finished = true;
     if (this.active === active) this.active = undefined;
+  }
+
+  /**
+   * Avisos do renderer. Sem contexto gráfico, a rolagem em andamento segue até
+   * o fim: o valor já está decidido e é conferido na cena, não na GPU. Os dados
+   * reaparecem quando o contexto volta.
+   */
+  private onRendererEvent(event: RendererEvent): void {
+    if (this.destroyed) return;
+    switch (event.type) {
+      case 'contextLost':
+        // Os efeitos em andamento viviam na GPU que se perdeu.
+        this.effectsLayer.stopAll();
+        this.emitter.emit('contextLost', { activeRollId: this.active?.plan.rollId ?? null });
+        break;
+      case 'contextRestored':
+        this.emitter.emit('contextRestored', { lostForMs: event.lostForMs });
+        break;
+      case 'qualityChanged':
+        this.effectsLayer.setParticleScale(PARTICLE_SCALE[event.to]);
+        this.emitter.emit('qualityChanged', {
+          from: event.from,
+          to: event.to,
+          fps: event.fps,
+          frameMs: { ...event.frameMs },
+        });
+        break;
+    }
   }
 
   /** Um quadro: avança a rolagem ativa, depois os efeitos. */

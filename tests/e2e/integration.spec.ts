@@ -52,8 +52,11 @@ test('fora de ordem, repetida, cancelada antes e sem valores', async ({ page }) 
   // Três pedidos entregues em ordem inversa: só o mais novo aparece.
   await page.getByTestId('remote-burst').click();
   await expect(page.getByTestId('remote-stat-stale')).toHaveText('2');
-  expect((await logLines(page)).slice(0, 3)).toEqual([
-    '#3 roll.requested srv-3 → aplicada',
+  const burst = (await logLines(page)).slice(0, 3);
+  // A linha da rolagem aplicada ganha o resultado quando ela conclui; com a
+  // máquina ocupada, isso pode acontecer antes da leitura.
+  expect(burst[0]).toMatch(/^#3 roll\.requested srv-3 → aplicada( · concluída: \d+, \d+)?$/);
+  expect(burst.slice(1)).toEqual([
     '#2 roll.requested srv-2 → obsoleta (out-of-order)',
     '#1 roll.requested srv-1 → obsoleta (out-of-order)',
   ]);

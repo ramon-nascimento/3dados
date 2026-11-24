@@ -2,7 +2,7 @@
 
 Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual, efeitos visuais e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 8 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal), áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície) e efeitos visuais (brilhos, auras, rastros, explosões, elementais, destaque, crítico e falha) disparados por condições que a aplicação declara, com níveis de acessibilidade. Rolagens simultâneas entram numa fila, e mensagens de um servidor multiplayer (repetidas, atrasadas, fora de ordem ou canceladas antes do pedido) são tratadas pelo motor. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 9 concluída (0.9.0).** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal), áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície) e efeitos visuais (brilhos, auras, rastros, explosões, elementais, destaque, crítico e falha) disparados por condições que a aplicação declara, com níveis de acessibilidade. Rolagens simultâneas entram numa fila, e mensagens de um servidor multiplayer (repetidas, atrasadas, fora de ordem ou canceladas antes do pedido) são tratadas pelo motor. A pré-simulação não trava a página, a qualidade gráfica se ajusta aos quadros medidos, a perda do contexto gráfico é tratada, e os limites de uso foram medidos em hardware identificado ([docs/BENCHMARKS.md](docs/BENCHMARKS.md)). O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 
@@ -63,6 +63,7 @@ Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md). Projetos com
 | `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas.                 |
 | `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).                               |
 | `npm run bench`                   | Medições da pré-simulação, do áudio e dos efeitos (fora do `npm test`).  |
+| `npm run bench:browser`           | Benchmark do playground no navegador, com o ambiente identificado.       |
 | `npm run test:consumer`           | Empacota a biblioteca, instala nos exemplos fora do repositório e testa. |
 | `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).                        |
 

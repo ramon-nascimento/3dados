@@ -32,15 +32,28 @@ import type { DieId } from '../core/types';
 import type { ResolvedAppearance } from '../customization/materials';
 import { DEFAULT_FONT_FAMILY, DEFAULT_FONT_WOFF2_BASE64 } from './default-font-data';
 import { buildDieMeshData, type AtlasLayout } from './die-mesh-data';
+import { AdaptiveQuality, FrameMeter, FramePacer, slowFrameThreshold } from './frame-meter';
 import { invertMask, paintAtlas } from './label-atlas';
 import { generatePatternPixels, hexToRgb } from './patterns';
-import type { Presentation, QualitySetting, RenderQuality } from './types';
+import type {
+  FrameSession,
+  Presentation,
+  QualitySetting,
+  RenderQuality,
+  RenderStats,
+  RendererEvent,
+} from './types';
 
-export type { Presentation, QualitySetting, RenderQuality, SceneObject } from './types';
-
-/** Nível de qualidade efetivo do render. */
-/** Qualidade pedida: um nível fixo ou `auto`. */
-/** `overlay`: canvas transparente sobre a aplicação. `tray`: bandeja visível. */
+export type {
+  FrameSession,
+  Presentation,
+  QualitySetting,
+  RenderQuality,
+  RenderStats,
+  RendererEvent,
+  SceneObject,
+  TimingSummary,
+} from './types';
 
 export interface DiceRendererOptions {
   /** Tamanho aproximado da aresta de um dado na tela, em pixels CSS. */
@@ -49,6 +62,8 @@ export interface DiceRendererOptions {
   maxPixelRatio: number;
   quality: QualitySetting;
   presentation: Presentation;
+  /** Teto de quadros por segundo. Ausente: a taxa do monitor. */
+  maxFps?: number;
 }
 
 interface QualityProfile {
@@ -111,6 +126,14 @@ interface DieResources {
   users: number;
 }
 
+interface MeshEntry {
+  mesh: Mesh;
+  resourceKey: string;
+  /** Guardados para refazer os recursos quando a qualidade muda. */
+  definition: DieDefinition;
+  appearance: ResolvedAppearance;
+}
+
 let defaultFontLoad: Promise<void> | undefined;
 
 /**
@@ -159,18 +182,17 @@ function isSoftwareRenderer(renderer: WebGLRenderer): boolean {
  * posições, rotações e aparências e as exibe.
  */
 export class DiceRenderer {
-  /** Qualidade efetiva, depois de resolver `auto`. */
-  readonly quality: RenderQuality;
   readonly presentation: Presentation;
   private readonly container: HTMLElement;
   private readonly options: DiceRendererOptions;
-  private readonly profile: QualityProfile;
+  /** Qualidade efetiva. Só muda quando a pedida é `auto`. */
+  private level: RenderQuality;
   private readonly canvas: HTMLCanvasElement;
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly camera = new PerspectiveCamera(30, 1, 0.1, CAMERA_DISTANCE + 10);
   private readonly light = new DirectionalLight(0xffffff, 1.6);
-  private readonly environment: WebGLRenderTarget;
+  private environment: WebGLRenderTarget;
   private readonly floor: Mesh<PlaneGeometry, Material>;
   private readonly rim: Mesh<BoxGeometry, MeshStandardMaterial>[] = [];
   private readonly feltTexture: CanvasTexture | undefined;
@@ -178,7 +200,22 @@ export class DiceRenderer {
   private readonly geometries = new Map<string, GeometryEntry>();
   /** Recursos por tipo de dado e aparência. A ordem de inserção marca o uso mais antigo. */
   private readonly resources = new Map<string, DieResources>();
-  private readonly meshes = new Map<DieId, { mesh: Mesh; resourceKey: string }>();
+  private readonly meshes = new Map<DieId, MeshEntry>();
+  private readonly meter = new FrameMeter();
+  private readonly pacer: FramePacer;
+  /** Só existe com a qualidade `auto` em uma GPU de verdade. */
+  private readonly adaptive: AdaptiveQuality | undefined;
+  /** Nível decidido pela qualidade automática, aplicado quando a mesa esvazia. */
+  private pendingQuality: { to: RenderQuality; session: FrameSession } | undefined;
+  private listener: ((event: RendererEvent) => void) | undefined;
+  private lastSession: FrameSession | null = null;
+  private anisotropy = 0;
+  private frames = 0;
+  private contextLost = false;
+  private lostAt = 0;
+  private contextLosses = 0;
+  private contextRestores = 0;
+  private qualityDrops = 0;
   private areaSize = { width: 0, depth: 0 };
   /** Tamanho do elemento e densidade de pixels na última vez em que a cena foi ajustada. */
   private fitted = { width: 0, height: 0, pixelRatio: 0 };
@@ -208,27 +245,22 @@ export class DiceRenderer {
         cause,
       });
     }
-    // `auto` só conhece, por ora, um sinal real: renderização por software.
-    // A qualidade adaptativa por medição é da Etapa 9.
-    this.quality =
-      options.quality === 'auto'
-        ? isSoftwareRenderer(this.renderer)
-          ? 'low'
-          : 'high'
-        : options.quality;
-    this.profile = QUALITY_PROFILES[this.quality];
+    // `auto` parte de um sinal real (renderização por software) e, numa GPU de
+    // verdade, desce de nível se os quadros medidos ficarem lentos.
+    const software = options.quality === 'auto' && isSoftwareRenderer(this.renderer);
+    this.level = options.quality === 'auto' ? (software ? 'low' : 'high') : options.quality;
+    this.adaptive =
+      options.quality === 'auto' && !software
+        ? new AdaptiveQuality(this.level, slowFrameThreshold(options.maxFps))
+        : undefined;
+    this.pacer = new FramePacer(options.maxFps);
+    this.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
 
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.toneMapping = NeutralToneMapping;
-    this.renderer.shadowMap.enabled = this.profile.shadowMapSize > 0;
 
     // Reflexos de metal, vidro e cristal: ambiente gerado por código, sem rede.
-    const pmrem = new PMREMGenerator(this.renderer);
-    const room = new RoomEnvironment();
-    this.environment = pmrem.fromScene(room, 0.04);
-    room.dispose();
-    pmrem.dispose();
-    this.scene.environment = this.environment.texture;
+    this.environment = this.buildEnvironment();
     this.scene.environmentIntensity = 0.9;
     // A luz mais forte da sala fica no teto. Com a câmera olhando de cima, a
     // face de cima de um dado liso a espelharia inteira e apagaria o número;
@@ -237,12 +269,9 @@ export class DiceRenderer {
 
     this.scene.add(new AmbientLight(0xffffff, 0.35));
     this.light.position.set(-8, 24, -10);
-    if (this.profile.shadowMapSize > 0) {
-      this.light.castShadow = true;
-      this.light.shadow.mapSize.set(this.profile.shadowMapSize, this.profile.shadowMapSize);
-      this.light.shadow.bias = -0.0005;
-      this.light.shadow.normalBias = 0.02;
-    }
+    this.light.shadow.bias = -0.0005;
+    this.light.shadow.normalBias = 0.02;
+    this.applyShadowProfile();
     this.scene.add(this.light, this.light.target);
 
     if (options.presentation === 'tray') {
@@ -286,12 +315,56 @@ export class DiceRenderer {
     this.scene.add(this.floor);
 
     void loadDefaultFont();
+    this.canvas.addEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.addEventListener('webglcontextrestored', this.onContextRestored);
     container.appendChild(this.canvas);
     this.resize();
     this.resizeObserver = new ResizeObserver(() => {
       this.resize();
     });
     this.resizeObserver.observe(container);
+  }
+
+  /** Qualidade efetiva, depois de resolver `auto`. */
+  get quality(): RenderQuality {
+    return this.level;
+  }
+
+  /** Recebe os avisos do renderer: contexto perdido ou restaurado e mudança de qualidade. */
+  setListener(listener: (event: RendererEvent) => void): void {
+    this.listener = listener;
+  }
+
+  /** Medições do render neste instante. */
+  getStats(): RenderStats {
+    const { info } = this.renderer;
+    return {
+      active: this.frameHandle !== null,
+      frames: this.frames,
+      current: this.meter.snapshot(),
+      // Cópia: quem recebe as medições pode guardá-las ou alterá-las.
+      lastSession: this.lastSession && {
+        ...this.lastSession,
+        frameMs: { ...this.lastSession.frameMs },
+        cpuMs: { ...this.lastSession.cpuMs },
+      },
+      drawCalls: info.render.calls,
+      triangles: info.render.triangles,
+      geometries: info.memory.geometries,
+      textures: info.memory.textures,
+      canvas: {
+        width: this.canvas.width,
+        height: this.canvas.height,
+        pixelRatio: this.fitted.pixelRatio,
+      },
+      quality: this.level,
+      qualitySetting: this.options.quality,
+      maxFps: this.options.maxFps ?? null,
+      context: this.contextLost ? 'lost' : 'active',
+      contextLosses: this.contextLosses,
+      contextRestores: this.contextRestores,
+      qualityDrops: this.qualityDrops,
+    };
   }
 
   /** Área da mesa visível, centrada na origem, em unidades (1 unidade = um dado). */
@@ -321,12 +394,14 @@ export class DiceRenderer {
     if (this.meshes.has(dieId)) {
       throw new DiceError('INVALID_ARGUMENT', `Já existe um dado com o identificador "${dieId}".`);
     }
+    // Mesa vazia: é a hora de trocar a qualidade sem que nada mude à vista.
+    if (this.meshes.size === 0) this.applyPendingQuality();
     const resourceKey = this.acquire(definition, appearance);
     const { geometry, material } = this.resources.get(resourceKey)!;
     const mesh = new Mesh(geometry, material);
     mesh.castShadow = this.profile.shadowMapSize > 0;
     mesh.receiveShadow = this.profile.shadowMapSize > 0;
-    this.meshes.set(dieId, { mesh, resourceKey });
+    this.meshes.set(dieId, { mesh, resourceKey, definition, appearance });
     this.scene.add(mesh);
   }
 
@@ -339,6 +414,8 @@ export class DiceRenderer {
     entry.mesh.geometry = geometry;
     entry.mesh.material = material;
     entry.resourceKey = resourceKey;
+    entry.definition = definition;
+    entry.appearance = appearance;
   }
 
   removeDie(dieId: DieId): void {
@@ -387,15 +464,25 @@ export class DiceRenderer {
   /** Chama `onFrame` a cada quadro e redesenha. Sem animação ativa, nada roda. */
   startLoop(onFrame: () => void): void {
     this.onFrame = onFrame;
-    this.frameHandle ??= requestAnimationFrame(this.tick);
+    if (this.frameHandle !== null) return;
+    this.meter.begin();
+    this.pacer.reset();
+    this.frameHandle = requestAnimationFrame(this.tick);
   }
 
   stopLoop(): void {
     this.onFrame = null;
-    if (this.frameHandle !== null) {
-      cancelAnimationFrame(this.frameHandle);
-      this.frameHandle = null;
-    }
+    if (this.frameHandle === null) return;
+    cancelAnimationFrame(this.frameHandle);
+    this.frameHandle = null;
+    const session = this.meter.end();
+    if (!session || this.disposed) return;
+    this.lastSession = session;
+    const lower = this.adaptive?.observe(session);
+    if (lower === undefined) return;
+    this.pendingQuality = { to: lower, session };
+    // Com dados parados na mesa, a troca espera a próxima rolagem.
+    if (this.meshes.size === 0) this.applyPendingQuality();
   }
 
   render(): void {
@@ -407,6 +494,9 @@ export class DiceRenderer {
     if (this.disposed) return;
     this.stopLoop();
     this.disposed = true;
+    this.listener = undefined;
+    this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
+    this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
     this.resizeObserver.disconnect();
     for (const { mesh } of this.meshes.values()) this.scene.remove(mesh);
     this.meshes.clear();
@@ -419,7 +509,7 @@ export class DiceRenderer {
       side.material.dispose();
     }
     this.environment.dispose();
-    this.light.shadow.map?.dispose();
+    this.light.shadow.dispose();
     this.renderer.dispose();
     // Sem isto o contexto WebGL só é liberado quando o coletor de lixo passa. O
     // navegador mantém poucos vivos (16 no Chromium) e, passando disso, derruba
@@ -428,13 +518,139 @@ export class DiceRenderer {
     this.canvas.remove();
   }
 
-  private readonly tick = (): void => {
+  private get profile(): QualityProfile {
+    return QUALITY_PROFILES[this.level];
+  }
+
+  private readonly tick = (time: number): void => {
     this.frameHandle = requestAnimationFrame(this.tick);
+    if (!this.pacer.accept(time)) return;
+    const started = performance.now();
     this.onFrame?.();
     this.render();
+    this.frames++;
+    // Sem contexto nada é desenhado: esses quadros não medem a máquina.
+    if (!this.contextLost) this.meter.frame(time, performance.now() - started);
   };
 
-  private entryOf(dieId: DieId): { mesh: Mesh; resourceKey: string } {
+  /** Mapa de ambiente dos reflexos. É desenhado na GPU: precisa ser refeito se o contexto volta. */
+  private buildEnvironment(): WebGLRenderTarget {
+    const pmrem = new PMREMGenerator(this.renderer);
+    const room = new RoomEnvironment();
+    const environment = pmrem.fromScene(room, 0.04);
+    room.dispose();
+    pmrem.dispose();
+    this.scene.environment = environment.texture;
+    return environment;
+  }
+
+  /** Sombras conforme a qualidade atual. O mapa antigo é liberado: o tamanho pode ter mudado. */
+  private applyShadowProfile(): void {
+    const size = this.profile.shadowMapSize;
+    const shadows = size > 0;
+    this.renderer.shadowMap.enabled = shadows;
+    this.light.castShadow = shadows;
+    if (shadows) this.light.shadow.mapSize.set(size, size);
+    this.releaseShadowMap();
+  }
+
+  private releaseShadowMap(): void {
+    const { shadow } = this.light;
+    shadow.dispose();
+    // O three recria os alvos na próxima passada de sombras.
+    shadow.map = null;
+    shadow.mapPass = null;
+  }
+
+  /**
+   * Troca a qualidade decidida pela medição dos quadros: densidade de pixels,
+   * sombras e transmissão. Os recursos dos dados são refeitos, porque o
+   * material depende do nível.
+   */
+  private applyPendingQuality(): void {
+    const pending = this.pendingQuality;
+    if (!pending || this.disposed) return;
+    this.pendingQuality = undefined;
+    const from = this.level;
+    this.level = pending.to;
+    this.qualityDrops++;
+
+    this.applyShadowProfile();
+    const shadows = this.profile.shadowMapSize > 0;
+    const entries = [...this.meshes.values()];
+    for (const entry of entries) this.release(entry.resourceKey);
+    for (const key of [...this.resources.keys()]) this.destroyResources(key);
+    for (const entry of entries) {
+      entry.resourceKey = this.acquire(entry.definition, entry.appearance);
+      const { geometry, material } = this.resources.get(entry.resourceKey)!;
+      entry.mesh.geometry = geometry;
+      entry.mesh.material = material;
+      entry.mesh.castShadow = shadows;
+      entry.mesh.receiveShadow = shadows;
+    }
+    this.floor.material.needsUpdate = true;
+    for (const side of this.rim) side.material.needsUpdate = true;
+
+    // Refaz o ajuste do canvas: a densidade de pixels depende do nível.
+    this.fitted = { width: 0, height: 0, pixelRatio: 0 };
+    this.resize();
+    this.listener?.({
+      type: 'qualityChanged',
+      from,
+      to: pending.to,
+      fps: pending.session.fps,
+      frameMs: pending.session.frameMs,
+    });
+  }
+
+  /**
+   * O navegador tirou o contexto gráfico (driver reiniciado, GPU trocada,
+   * memória). Tudo o que estava na GPU se perdeu. Libera as referências do
+   * three a esses recursos agora, com o contexto ainda perdido: quando ele
+   * voltar, geometrias, materiais e texturas são enviados de novo a partir dos
+   * dados que continuam na memória.
+   */
+  private readonly onContextLost = (event: Event): void => {
+    // Sem isto o navegador não tenta devolver o contexto.
+    event.preventDefault();
+    if (this.disposed || this.contextLost) return;
+    this.contextLost = true;
+    this.lostAt = performance.now();
+    this.contextLosses++;
+    for (const { geometry } of this.geometries.values()) geometry.dispose();
+    for (const { material, textures } of this.resources.values()) {
+      material.dispose();
+      for (const texture of textures) texture.dispose();
+    }
+    this.floor.geometry.dispose();
+    this.floor.material.dispose();
+    this.feltTexture?.dispose();
+    for (const side of this.rim) {
+      side.geometry.dispose();
+      side.material.dispose();
+    }
+    this.environment.dispose();
+    this.scene.environment = null;
+    this.releaseShadowMap();
+    this.listener?.({ type: 'contextLost' });
+  };
+
+  /** O contexto voltou: o three já refez o estado dele; aqui volta o que é do renderer. */
+  private readonly onContextRestored = (): void => {
+    if (this.disposed || !this.contextLost) return;
+    this.contextLost = false;
+    this.contextRestores++;
+    this.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+    this.environment = this.buildEnvironment();
+    // Os primeiros quadros recompilam shaders e reenviam texturas: fora da medição.
+    if (this.frameHandle !== null) this.meter.begin();
+    this.fitted = { width: 0, height: 0, pixelRatio: 0 };
+    this.resize();
+    this.render();
+    this.listener?.({ type: 'contextRestored', lostForMs: performance.now() - this.lostAt });
+  };
+
+  private entryOf(dieId: DieId): MeshEntry {
     const entry = this.meshes.get(dieId);
     if (!entry) throw new DiceError('INVALID_ARGUMENT', `Dado desconhecido: "${dieId}".`);
     return entry;
@@ -521,7 +737,7 @@ export class DiceRenderer {
       cellSize: ATLAS_CELL_SIZE,
       seed: textSeed(definition.type),
     });
-    const anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+    const { anisotropy } = this;
     const texture = (canvas: HTMLCanvasElement, color: boolean) => {
       const result = new CanvasTexture(canvas);
       result.colorSpace = color ? SRGBColorSpace : NoColorSpace;

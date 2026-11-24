@@ -141,6 +141,8 @@ export class DiceEffects implements DiceEffectsControls {
   private setting: EffectLevelSetting;
   private effective: EffectLevel;
   private root: Group | undefined;
+  /** Fração do teto de partículas em vigor (a qualidade do render a reduz). */
+  private particleScale = 1;
   private particles = 0;
   private skipped = 0;
   private nextId = 1;
@@ -148,7 +150,7 @@ export class DiceEffects implements DiceEffectsControls {
   private disposed = false;
   private readonly budget: ParticleBudget = {
     take: (wanted) => {
-      const allowed = Math.max(Math.min(wanted, this.maxParticles - this.particles), 0);
+      const allowed = Math.max(Math.min(wanted, this.particleLimit - this.particles), 0);
       this.particles += allowed;
       return allowed;
     },
@@ -175,6 +177,19 @@ export class DiceEffects implements DiceEffectsControls {
 
   get levelSetting(): EffectLevelSetting {
     return this.setting;
+  }
+
+  /** Teto de partículas em vigor: `maxParticles` vezes a fração da qualidade. */
+  get particleLimit(): number {
+    return Math.round(this.maxParticles * this.particleScale);
+  }
+
+  /**
+   * Fração do teto de partículas, de 0 a 1. Uso do motor: qualidades de render
+   * mais baixas desenham menos partículas. Vale para os próximos efeitos.
+   */
+  setParticleScale(scale: number): void {
+    this.particleScale = Math.min(Math.max(scale, 0), 1);
   }
 
   setLevel(level: EffectLevelSetting): void {
@@ -304,6 +319,7 @@ export class DiceEffects implements DiceEffectsControls {
       level: this.effective,
       active: this.active.size,
       particles: this.particles,
+      particleLimit: this.particleLimit,
       objects,
       created: this.resources.created,
       disposed: this.resources.disposed,

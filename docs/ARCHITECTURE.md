@@ -24,8 +24,8 @@ A tabela é definida em [`eslint.boundaries.js`](../eslint.boundaries.js) e exer
 | Módulo          | Responsabilidade                                                                                                                                                                                                                                                                        |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `core`          | Definições de dados como dados puros (vértices, faces, direção de leitura e valor de cada face), registro de dados, validação de pedidos, RNG, leitura de face, grupo de simetria, eventos, erros.                                                                                      |
-| `physics`       | Pré-simulação: lançamento semeado, passo fixo, detecção de estabilização, gravação da trajetória e da linha do tempo de colisões, critérios de rejeição.                                                                                                                                |
-| `renderer`      | Cena, câmera, luzes, sombras, malhas, atlas de números, materiais, reprodução da trajetória, redimensionamento, perda de contexto, descarte de recursos.                                                                                                                                |
+| `physics`       | Pré-simulação fatiada no tempo: lançamento semeado, passo fixo, detecção de estabilização, gravação da trajetória e da linha do tempo de colisões, critérios de rejeição, parâmetros validados e ajustáveis.                                                                            |
+| `renderer`      | Cena, câmera, luzes, sombras, malhas, atlas de números, materiais, redimensionamento, laço de render com teto de quadros, medição dos quadros, qualidade automática, perda e restauração do contexto gráfico, descarte de recursos.                                                     |
 | `customization` | Esquema de tema serializável e versionado, validação, migração, presets de material (aparência, parâmetros físicos e perfil sonoro).                                                                                                                                                    |
 | `audio`         | Planejamento dos sons a partir da gravação (impactos, tombos, lançamento, estabilização), banco de amostras com síntese de reserva, limite de vozes, variação de ganho e altura, compressor, desbloqueio por gesto do usuário.                                                          |
 | `effects`       | Camada de efeitos visuais em grupo próprio na cena: catálogo de efeitos internos (anel, halo e emissores de partículas), presets da aplicação, planejamento dos gatilhos do pedido, níveis `off`/`reduced`/`full`/`auto`, teto de partículas, limite de flashes e contagem de recursos. |
@@ -67,7 +67,7 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 - Um dado que recebeu empurrão corretivo é marcado com `recovered: true`. A rolagem dura mais, porque ele volta a rolar.
 - A orientação inicial do dado é consequência do valor-alvo.
 - Espectadores diferentes não veem necessariamente a mesma trajetória; veem sempre o mesmo resultado.
-- A pré-simulação consome CPU antes do primeiro quadro: de 2 a 13 ms para 1 a 20 d6 na máquina de referência, e mais com dados grandes ou mesa cheia. O motor aquece a física ao ser criado para que a primeira rolagem não seja mais lenta que as demais. A interface de física é assíncrona para permitir Web Worker sem mudar contratos.
+- A pré-simulação consome CPU antes do primeiro quadro: de 2 a 13 ms para 1 a 20 d6 na máquina de referência, e mais com dados grandes ou mesa cheia. O motor aquece a física ao ser criado para que a primeira rolagem não seja mais lenta que as demais. Ela roda na thread principal em trechos de até 8 ms, devolvendo o controle ao navegador entre eles; a espera antes do primeiro quadro continua existindo, mas a página não trava ([ADR 0013](adr/0013-desempenho-e-contexto-grafico.md)). A interface de física segue assíncrona, o que permite um Web Worker sem mudar contratos.
 - Dados de rolagens anteriores que permanecem na mesa nunca são corpos dinâmicos em uma nova simulação, para não mudarem de face. Hoje eles são removidos quando uma nova rolagem começa.
 - A capacidade depende da área e do tamanho dos dados. Com a recuperação, rolagens densas concluem; em densidades extremas ainda há falhas explícitas e esperas de centenas de milissegundos (números em [BENCHMARKS.md](BENCHMARKS.md)).
 
@@ -90,6 +90,24 @@ Recursos do renderer:
 - **Texturas procedurais.** Pontilhado, mármore, veios de madeira e pedra são gerados por código (ruído de valor periódico), sem arquivos de imagem. A semente vem do tipo de dado: a mesma aparência produz sempre a mesma textura.
 - **Cache com contagem de referências.** Geometria (por tipo e chanfro) e material (por tipo e aparência) são compartilhados entre dados iguais. Recursos sem uso ficam em uma fila de até 24 antes de serem liberados.
 - **Iluminação.** `MeshPhysicalMaterial` com um ambiente gerado (`RoomEnvironment`, inclinado para não refletir a luz de teto nas faces de cima), luz direcional com sombra e mapeamento de tons neutro.
+
+## Desempenho e estabilidade
+
+Decisões em [ADR 0013](adr/0013-desempenho-e-contexto-grafico.md); números e limites em [BENCHMARKS.md](BENCHMARKS.md).
+
+| Peça                 | Onde                         | O que faz                                                                                                                                                                                     |
+| -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fatiamento           | `Slicer` (physics)           | Mede o trabalho da pré-simulação e, a cada 8 ms, devolve o controle ao hospedeiro (`scheduler.yield`, `MessageChannel` ou `setImmediate`). Informa o tempo de CPU e o maior trecho sem pausa. |
+| Laço de render       | `DiceRenderer`               | Só roda com rolagem animando ou efeito em movimento. Cada trecho, do ligar ao desligar, é uma sessão de medição.                                                                              |
+| Medidor              | `FrameMeter` (renderer)      | Intervalo entre quadros e CPU por quadro de cada sessão, sem os quadros de aquecimento nem os intervalos de aba em segundo plano. Função pura dos instantes que recebe.                       |
+| Teto de quadros      | `FramePacer` (renderer)      | Decide, a cada quadro oferecido pelo navegador, se ele é desenhado (`maxFps`).                                                                                                                |
+| Qualidade automática | `AdaptiveQuality` (renderer) | Recebe cada sessão encerrada e decide descer um nível depois de duas sessões seguidas abaixo de 25 quadros por segundo. A troca é aplicada com a mesa vazia e refaz os recursos dos dados.    |
+| Contexto gráfico     | `DiceRenderer`               | Ouve `webglcontextlost` e `webglcontextrestored` no canvas. Avisa o motor, que interrompe os efeitos e emite os eventos públicos.                                                             |
+| Parâmetros da física | `parsePhysicsConfig`         | Faixa de cada parâmetro (`PHYSICS_LIMITS`); `engine.setPhysics` troca o conjunto inteiro, e uma simulação em curso segue com o que começou.                                                   |
+
+**Perda de contexto.** Quando o navegador tira o contexto, tudo o que estava na GPU se perde, mas os dados que geraram esses recursos (geometrias, canvases dos atlas, materiais) continuam na memória. Na perda, o renderer chama `dispose()` em cada recurso: com o contexto perdido isso não toca a GPU, só faz o three esquecer os identificadores antigos. Na restauração, o three recria o estado interno dele e reenvia cada recurso na primeira vez em que é usado; o renderer só precisa refazer o mapa de ambiente, que é desenhado na GPU, e redesenhar. Os efeitos em andamento são encerrados na perda. O motor não pausa a rolagem: o resultado nunca dependeu da GPU.
+
+**Qualidade automática.** O sinal é a taxa de quadros medida em cada animação, que existe em qualquer navegador. O nível só desce, só com `quality: 'auto'` e só fora do WebGL por software (que já começa em `low`). O teto de partículas dos efeitos acompanha o nível.
 
 ## Áudio
 
@@ -165,18 +183,18 @@ O `integration` planeja os efeitos logo depois do plano da rolagem (gatilhos do 
 
 ## Principais riscos
 
-| Risco                                           | Mitigação                                                                                                                  |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Geometria do d10 e leitura do d4                | Construção analítica; testes de planaridade, convexidade e leitura para toda face.                                         |
-| Erro na reorientação mostraria valor errado     | Teste exaustivo de todos os pares de faces; dupla verificação em tempo de execução.                                        |
-| Pré-simulação trava a thread principal          | Medir; fatiar em quadros ou mover para Worker.                                                                             |
-| Dados que não estabilizam                       | Rejeição e nova semente fora da tela; recuperação marcada.                                                                 |
-| Peso do Rapier (≈4,3 MB antes de compressão)    | Carregamento por `import()` dinâmico; teste de consumo em projeto mínimo.                                                  |
-| Three.js sem versionamento semântico            | Versão exata; uso confinado a `renderer` e `effects`.                                                                      |
-| Vidro e cristal caros em GPU fraca              | Níveis de qualidade; transmissão só em `high` com bandeja.                                                                 |
-| Autoplay de áudio e licença de sons             | Desbloqueio por gesto; só CC0, com créditos testados; síntese de reserva sem arquivos.                                     |
-| Efeitos desconfortáveis ou caros                | Nível `auto` segue `prefers-reduced-motion`; flash limitado; teto de partículas.                                           |
-| Perda de contexto WebGL e vazamentos            | Recursos de GPU reconstruíveis; `forceContextLoss()` no descarte; teste de memória, ouvintes e contextos após `destroy()`. |
-| Mensagens repetidas, atrasadas ou fora de ordem | Sequenciador por sala; testes com entregas em ordens diferentes convergindo na mesma mesa.                                 |
-| Tipos do three ou do Rapier vazando na API      | Tipos públicos em arquivos-folha; teste de consumo com TypeScript estrito.                                                 |
-| Testes visuais instáveis entre GPUs             | Semente fixa, quadro congelado, tolerância, plataforma de referência única.                                                |
+| Risco                                           | Mitigação                                                                                                                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Geometria do d10 e leitura do d4                | Construção analítica; testes de planaridade, convexidade e leitura para toda face.                                                                            |
+| Erro na reorientação mostraria valor errado     | Teste exaustivo de todos os pares de faces; dupla verificação em tempo de execução.                                                                           |
+| Pré-simulação trava a thread principal          | Fatiamento em trechos de 8 ms; `longestTaskMs` medido em cada rolagem; Worker fica como opção se as medições em hardware fraco pedirem.                       |
+| Dados que não estabilizam                       | Rejeição e nova semente fora da tela; recuperação marcada.                                                                                                    |
+| Peso do Rapier (≈4,3 MB antes de compressão)    | Carregamento por `import()` dinâmico; teste de consumo em projeto mínimo.                                                                                     |
+| Three.js sem versionamento semântico            | Versão exata; uso confinado a `renderer` e `effects`.                                                                                                         |
+| Vidro e cristal caros em GPU fraca              | Níveis de qualidade; transmissão só em `high` com bandeja; a qualidade automática desce pelo intervalo entre quadros medido.                                  |
+| Autoplay de áudio e licença de sons             | Desbloqueio por gesto; só CC0, com créditos testados; síntese de reserva sem arquivos.                                                                        |
+| Efeitos desconfortáveis ou caros                | Nível `auto` segue `prefers-reduced-motion`; flash limitado; teto de partículas.                                                                              |
+| Perda de contexto WebGL e vazamentos            | Recursos de GPU reconstruídos na restauração, com teste no navegador; `forceContextLoss()` no descarte; testes de memória em 200 rolagens e após `destroy()`. |
+| Mensagens repetidas, atrasadas ou fora de ordem | Sequenciador por sala; testes com entregas em ordens diferentes convergindo na mesma mesa.                                                                    |
+| Tipos do three ou do Rapier vazando na API      | Tipos públicos em arquivos-folha; teste de consumo com TypeScript estrito.                                                                                    |
+| Testes visuais instáveis entre GPUs             | Semente fixa, quadro congelado, tolerância, plataforma de referência única.                                                                                   |

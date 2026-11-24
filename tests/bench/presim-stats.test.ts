@@ -8,6 +8,8 @@ import { createPhysicsSimulator } from '../../src/physics/simulator';
 // calibrar parâmetros e alimentar docs/BENCHMARKS.md. Rodar com `npm run bench`.
 // Variáveis: BENCH_RUNS, BENCH_COUNTS ("1,2,5"), BENCH_AREA ("26x15"), BENCH_TYPES ("d6,d20"),
 // BENCH_MATERIALS ("plastic,metal"; padrão: só plástico) e BENCH_CONFIG (JSON de PhysicsConfig).
+// "CPU" é o tempo trabalhado; "maior trecho" é o quanto a simulação segurou a thread de uma vez
+// (ela pausa a cada 8 ms).
 const [AREA_WIDTH = 26, AREA_DEPTH = 15] = (process.env.BENCH_AREA ?? '')
   .split('x')
   .filter(Boolean)
@@ -40,6 +42,7 @@ describe('estatísticas da pré-simulação', () => {
       material: preset.physics,
     }));
     const cpu: number[] = [];
+    const longest: number[] = [];
     const duration: number[] = [];
     const rejections = new Map<string, number>();
     let attempts = 0;
@@ -51,6 +54,7 @@ describe('estatísticas da pré-simulação', () => {
       try {
         const result = await simulator.simulate({ dice, area: AREA, seed: seed * 7919 });
         cpu.push(result.cpuTimeMs);
+        longest.push(result.longestTaskMs);
         duration.push(result.recording.stepCount * result.recording.timestep);
         attempts += result.attempts;
         const nudged = result.recovered.filter(Boolean).length;
@@ -64,12 +68,14 @@ describe('estatísticas da pré-simulação', () => {
     }
 
     cpu.sort((a, b) => a - b);
+    longest.sort((a, b) => a - b);
     duration.sort((a, b) => a - b);
     const f = (n: number) => n.toFixed(2);
     console.log(
       [
         `${count} ${type} de ${material} × ${RUNS} rolagens (área ${AREA.width}×${AREA.depth})`,
         `  CPU ms      mediana ${f(percentile(cpu, 0.5))}  p95 ${f(percentile(cpu, 0.95))}  máx ${f(cpu.at(-1) ?? NaN)}`,
+        `  maior trecho mediana ${f(percentile(longest, 0.5))}  p95 ${f(percentile(longest, 0.95))}  máx ${f(longest.at(-1) ?? NaN)} ms (sem pausa)`,
         `  duração s   mediana ${f(percentile(duration, 0.5))}  p95 ${f(percentile(duration, 0.95))}  máx ${f(duration.at(-1) ?? NaN)}`,
         `  tentativas  média ${f(attempts / Math.max(cpu.length, 1))}  descartes ${JSON.stringify(Object.fromEntries(rejections))}  falhas ${failures}`,
         `  recuperação rolagens ${((100 * recoveredRolls) / Math.max(cpu.length, 1)).toFixed(0)}%  dados ${((100 * recoveredDice) / Math.max(cpu.length * count, 1)).toFixed(1)}%`,

@@ -399,3 +399,31 @@ label.inline {
 .remote-log li[data-status='cancelled'] {
   opacity: 0.75;
 }
+
+.subhead {
+  margin: 12px 0 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bench-output {
+  width: 100%;
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 0.75rem;
+  white-space: pre;
+}
+
+/* Rótulos longos e valores curtos: o rótulo quebra, o valor não. */
+.readout.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  font-size: 0.85rem;
+}
+
+.readout.compact dd {
+  overflow-wrap: normal;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

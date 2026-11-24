@@ -109,6 +109,9 @@ test.describe('orientação real das malhas', () => {
   test('modo autônomo: o valor informado é o que as malhas exibem, em rolagens seguidas', async ({
     page,
   }) => {
+    // Quatro rolagens de 16 dados, com a espera da fila entre elas: sozinho leva
+    // uns 13 s; com os outros testes disputando a CPU, passou de 30 s.
+    test.setTimeout(90_000);
     await openPlayground(page);
     const standard = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
 

@@ -1,4 +1,5 @@
 import { DiceError } from '../core/errors';
+import { MAX_FPS_LIMITS } from '../renderer/types';
 
 /**
  * O que acontece quando uma rolagem chega com outra em andamento.
@@ -72,6 +73,11 @@ function numberIn(
     );
   }
   return value;
+}
+
+/** Valida `maxFps`. Ausente: sem teto (a taxa do monitor). */
+export function parseMaxFps(value: unknown): number | undefined {
+  return value === undefined ? undefined : numberIn(value, 'maxFps', MAX_FPS_LIMITS, false);
 }
 
 /** Valida `concurrency`, `queue` e `remote` das opções do motor. */

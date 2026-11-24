@@ -48,7 +48,8 @@ describe('rolagens simultâneas: fila (padrão)', () => {
 
     // O temporizador da fila só dispara depois do tempo mínimo.
     expect(h.flushTimers()).toBe(true);
-    expect(h.now() - completedAt).toBeGreaterThanOrEqual(1500);
+    // Folga para o arredondamento: o relógio do teste soma frações de quadro.
+    expect(h.now() - completedAt).toBeGreaterThanOrEqual(1500 - 1e-6);
     expect(h.engine.getState().activeRoll?.rollId).toBe('b');
     expect(await h.play(second)).toMatchObject({ status: 'completed', total: 17 });
     expect(h.renderer.displayed()).toEqual({ 'b:0': 17 });

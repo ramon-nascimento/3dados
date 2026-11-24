@@ -4,6 +4,39 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.9.0] — 2026-11-24
+
+Etapa 9 — Otimização e validação.
+
+### Adicionado
+
+- Tratamento da perda do contexto gráfico: o motor ouve `webglcontextlost` e `webglcontextrestored`, refaz os recursos de GPU quando o contexto volta e redesenha a mesa. Eventos `contextLost` (`{ activeRollId }`) e `contextRestored` (`{ lostForMs }`); `getState().context`. A rolagem em andamento conclui mesmo sem contexto.
+- Qualidade automática por medição: com `quality: 'auto'`, o motor mede os quadros de cada animação e desce um nível (`high` → `medium` → `low`) depois de duas animações seguidas abaixo de 25 quadros por segundo. Evento `qualityChanged` (`{ from, to, fps, frameMs }`).
+- `maxFps` em `DiceEngine.create`: teto de quadros por segundo, de 10 a 240.
+- `engine.setPhysics(config)` e `engine.getPhysics()`: parâmetros da física ajustáveis com o motor em uso, valendo a partir da rolagem seguinte. `PHYSICS_LIMITS` e `DEFAULT_PHYSICS_CONFIG` exportados.
+- `getStats().render` (`RenderStats`): quadros por segundo, intervalo entre quadros e CPU por quadro da animação em curso e da última, chamadas de desenho, triângulos, geometrias e texturas na GPU, tamanho do canvas, qualidade, contexto e contadores. Tipos `RenderStats`, `FrameSession` e `TimingSummary`; `MAX_FPS_LIMITS`.
+- `longestTaskMs` em `rollStarted.simulation` e em `getStats().simulation`: o maior trecho em que a pré-simulação segurou a thread. `particleLimit` em `effects.getStats()`.
+- Playground: painel de física (12 parâmetros, com restauração dos padrões), painel de desempenho completo (quadros, CPU por quadro, cena, memória, qualidade, contexto, botões para perder e restaurar o contexto), teto de quadros no painel de exibição (`?maxFps=30`) e modo de benchmark (`?bench=run`), que roda uma bateria fixa e mostra a tabela e o JSON com o ambiente identificado.
+- `npm run bench:browser`: o benchmark do playground pelo Playwright, com opção de navegador instalado, GPU ou WebGL por software e desaceleração de CPU.
+- Testes: perda e restauração do contexto no navegador (no meio da animação, com a mesa parada e com rolagem pedida sem contexto), 200 rolagens seguidas sem acúmulo de memória (heap, memória fora do heap, DOM, ouvintes, GPU, efeitos e vozes), painéis de física e de desempenho, teto de quadros, troca de qualidade e modo de benchmark.
+
+### Alterado
+
+- **A pré-simulação não trava mais a página.** Ela roda em trechos de até 8 ms e devolve o controle ao navegador entre eles. `cpuTimeMs` passa a contar só o tempo trabalhado, sem as pausas.
+- Cancelar uma rolagem que ainda está sendo simulada interrompe a simulação na pausa seguinte, em vez de deixá-la terminar.
+- `physics` em `DiceEngine.create` passa a ser validado: valor fora da faixa ou campo desconhecido rejeita com `INVALID_ARGUMENT` (antes era aceito sem conferência).
+- O teto de partículas dos efeitos acompanha a qualidade do render: 100% em `high`, 60% em `medium` e 30% em `low`.
+- `quality: 'auto'` deixa de ser fixa depois da criação: fora do WebGL por software, pode descer durante o uso. `engine.quality` informa o nível em vigor.
+- Os efeitos visuais em andamento são interrompidos quando o contexto gráfico é perdido.
+
+### Limitações conhecidas
+
+- As medições vêm de uma única máquina, com GPU real, com WebGL por software e com a CPU desacelerada pelo DevTools. Os limites de `BENCHMARKS.md` são provisórios até medir em outro computador.
+- A qualidade automática só desce. Para voltar a um nível mais alto, crie outro motor.
+- O antisserrilhado é decidido na criação do contexto: um motor que desceu para `low` continua com ele.
+- Se o navegador não devolver o contexto gráfico, o motor segue entregando resultados sem imagem.
+- O motor não mede o tempo de GPU; o sinal usado é o intervalo entre quadros.
+
 ## [0.8.0] — 2026-11-24
 
 Etapa 8 — API e integração.

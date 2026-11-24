@@ -15,6 +15,7 @@ import {
 } from '../../src/integration/engine';
 import { parseRollOptions } from '../../src/integration/options';
 import { createPhysicsSimulator, type SimulationResult } from '../../src/physics/simulator';
+import { idleRenderStats } from './helpers/engine-harness';
 
 /** Renderer sem GPU: guarda as transformações e deixa o teste avançar os quadros. */
 class FakeRenderer implements EngineRenderer {
@@ -27,6 +28,8 @@ class FakeRenderer implements EngineRenderer {
   /** Quando definido, simula uma malha que exibe uma orientação diferente da pedida. */
   corruptRotation: Quat | undefined;
 
+  setListener(): void {}
+  getStats = idleRenderStats;
   async prepare(): Promise<void> {}
   setDieAppearance(): void {}
   addDie(dieId: string): void {

@@ -42,6 +42,11 @@ export interface SimulationRequest {
    * pedido se caírem em certas faces. Ausente ou `undefined`: qualquer face.
    */
   acceptableFaces?: readonly (ReadonlySet<string> | undefined)[];
+  /**
+   * Consultado a cada pausa da simulação. Se devolver `true`, a simulação
+   * para e rejeita com `SIMULATION_FAILED` (a rolagem foi cancelada).
+   */
+  aborted?: () => boolean;
 }
 
 /** Por que uma tentativa de simulação foi descartada. */
@@ -70,6 +75,11 @@ export interface SimulationResult {
   attempts: number;
   /** Motivo de descarte de cada tentativa anterior à aceita. */
   rejections: readonly RejectionReason[];
-  /** Tempo de CPU gasto em todas as tentativas, em milissegundos. */
+  /** Tempo de CPU gasto em todas as tentativas, em milissegundos. Não conta as pausas. */
   cpuTimeMs: number;
+  /**
+   * Maior trecho de trabalho sem devolver o controle ao hospedeiro, em
+   * milissegundos. É o quanto a simulação chegou a segurar a thread de uma vez.
+   */
+  longestTaskMs: number;
 }

@@ -8,11 +8,14 @@ export { DiceError, isDiceError } from './core/errors';
 export type { DiceErrorCode, DiceErrorOptions } from './core/errors';
 
 export type {
+  ContextLostEvent,
+  ContextRestoredEvent,
   DiceCollidedEvent,
   DiceEventMap,
   DiceEventName,
   DiceSettledEvent,
   Listener,
+  QualityChangedEvent,
   RollStartedEvent,
   Unsubscribe,
 } from './core/events';
@@ -56,7 +59,15 @@ export type {
   TableClearedEnvelope,
 } from './core/remote';
 
-export type { Presentation, QualitySetting, RenderQuality } from './renderer/types';
+export { MAX_FPS_LIMITS } from './renderer/types';
+export type {
+  FrameSession,
+  Presentation,
+  QualitySetting,
+  RenderQuality,
+  RenderStats,
+  TimingSummary,
+} from './renderer/types';
 
 export {
   DEFAULT_THEME,
@@ -79,6 +90,7 @@ export type {
   ThemeEmissive,
 } from './customization';
 
+export { DEFAULT_PHYSICS_CONFIG, PHYSICS_LIMITS } from './physics/config';
 export type { PhysicsConfig } from './physics/config';
 
 export { BUILTIN_SOUNDS, SOUND_PROFILES, SURFACES, intensityToGain } from './audio';
