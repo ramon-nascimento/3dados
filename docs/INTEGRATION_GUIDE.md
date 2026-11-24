@@ -1,6 +1,6 @@
 # Guia de integração
 
-> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas, temas com seis materiais (Etapa 5) e áudio contextual (Etapa 6). Efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
+> **Estado:** o motor rola d4, d6, d8, d10, d12, d20, d100 e dados personalizados, com recuperação de rolagens densas, temas com seis materiais, áudio contextual, efeitos visuais, fila de rolagens e o protocolo de mensagens multiplayer (Etapa 8). Projetos completos de exemplo, em JavaScript e em TypeScript, estão em [`examples/`](../examples/).
 
 ## Papéis
 
@@ -72,26 +72,94 @@ document.querySelector('#rolar').addEventListener('click', () => {
 
 ## Rolagem com resultado do servidor
 
-O servidor decide os valores; o motor os exibe.
+O servidor decide os valores; o motor os exibe. Para uma rolagem avulsa, basta o modo controlado:
 
 ```ts
-socket.on('roll', (message) => {
-  engine.roll({
-    id: message.rollId,
-    dice: [{ type: 'd6', values: message.values, role: 'damage' }],
-    metadata: { playerId: message.playerId, roomId: message.roomId },
-  });
+engine.roll({
+  id: 'r-42',
+  dice: [{ type: 'd6', values: [3, 5], role: 'damage' }],
 });
 ```
 
-Cada cliente anima a própria trajetória. O que é igual para todos é o resultado, não o caminho dos dados.
+Numa mesa com vários jogadores, use o protocolo de mensagens, descrito a seguir: ele trata o que a rede faz com as mensagens.
+
+## Multiplayer
+
+O servidor do VTT decide os valores, numera as mensagens de cada sala e as envia aos clientes. Cada cliente repassa o que recebe para `engine.remote.receive`, sem conferir nada antes:
+
+```ts
+import { DiceEngine } from '3dados';
+
+const engine = await DiceEngine.create(elemento);
+
+socket.on('dice', (message: unknown) => {
+  const receipt = engine.remote.receive(message); // nunca lança
+  if (receipt.status === 'rejected') console.warn(receipt.reason, receipt.error?.message);
+  void receipt.roll?.result.then(mostrarNoHistorico);
+});
+```
+
+No servidor, cada mensagem é um `RollEnvelope` ([formato completo](API.md#mensagens-externas-multiplayer)):
+
+```ts
+import { PROTOCOL_VERSION, type RollEnvelope } from '3dados';
+
+const message: RollEnvelope = {
+  protocolVersion: PROTOCOL_VERSION,
+  type: 'roll.requested',
+  roomId: 'mesa-1',
+  playerId: 'ana',
+  sequence: sala.proximaSequencia(), // crescente por sala
+  sentAt: Date.now(),
+  rollId: 'r-42', // único na sala
+  visibility: 'public',
+  payload: { dice: [{ type: 'd20', values: [17] }] }, // o valor é do servidor
+};
+```
+
+O que o motor faz por conta própria:
+
+| Quando a rede...                                    | O motor...                                                                        |
+| --------------------------------------------------- | --------------------------------------------------------------------------------- |
+| entrega a mesma mensagem duas vezes                 | descarta a segunda (`duplicate`).                                                 |
+| entrega um pedido antigo depois de um mais novo     | descarta o antigo (`stale`, `out-of-order`): a mesa segue a ordem do servidor.    |
+| entrega um pedido feito antes de um `table.cleared` | descarta o pedido (`before-clear`).                                               |
+| entrega o cancelamento antes do pedido              | guarda o cancelamento; quando o pedido chega, a rolagem não começa (`cancelled`). |
+| entrega o cancelamento depois do fim da rolagem     | ignora (`stale`, `already-finished`).                                             |
+| perde mensagens (buraco na sequência)               | segue em frente; nunca espera uma sequência que falta.                            |
+
+Cuidados:
+
+- **Os valores vêm do servidor.** Um pedido remoto sem `values` é recusado. Nunca deixe um cliente sortear por outro.
+- **Permissões são do servidor.** `visibility` só é repassada em `metadata`; o motor mostra tudo o que recebe. Uma rolagem privada não deve chegar a quem não pode vê-la.
+- **Reconexão.** Se o servidor reiniciar a numeração (sala nova, servidor reiniciado), chame `engine.remote.reset(roomId)`. Sem isso, as sequências repetidas seriam descartadas como duplicatas.
+- **Rolagens próprias.** O jogador que rola também deve receber a rolagem pelo servidor, como os outros. Se ele animar localmente com `roll()` e depois receber a mensagem, verá a rolagem duas vezes.
+- **Trajetórias.** Cada cliente anima a própria trajetória. O que é igual para todos é o resultado, não o caminho dos dados ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).
+- **Tempo de validade.** `remote: { maxAgeMs }` descarta mensagens velhas comparando `sentAt` com o relógio local. Use só com o relógio alinhado ao do servidor.
+
+O playground tem um painel de integração com um servidor simulado (latência, repetição, ordem inversa, cancelamentos e mensagens inválidas), útil para ver cada caso acontecer.
+
+## Rolagens simultâneas
+
+Por padrão (`concurrency: 'queue'`), uma rolagem que chega com outra na mesa espera a vez, e o resultado de cada uma fica à vista por pelo menos 1,5 s antes de a próxima começar:
+
+```ts
+const engine = await DiceEngine.create(elemento, {
+  queue: { holdMs: 2000, maxPending: 4 },
+});
+```
+
+- Com a fila cheia, a rolagem mais antiga que ainda espera é cancelada (`superseded`).
+- `engine.getState()` mostra a rolagem ativa e a fila, para a aplicação exibir, por exemplo, quantas rolagens esperam.
+- Para que cada rolagem nova interrompa a anterior, como nas versões até a 0.7, use `concurrency: 'replace'`.
+- `holdMs: 0` começa a próxima assim que a anterior conclui.
 
 ## Tratamento de falhas
 
 `roll()` nunca lança e `result` nunca rejeita. Trate os três desfechos:
 
 - `completed`: os valores em `dice` são os exibidos.
-- `cancelled`: `reason` diz por quê (`caller`, `superseded`, `cleared`, `destroyed`).
+- `cancelled`: `reason` diz por quê (`caller`, `superseded`, `cleared`, `remote`, `destroyed`).
 - `failed`: `error.code` diz o que houve. Os dois casos que merecem tratamento próprio:
   - `SIMULATION_FAILED`: dados demais para a área disponível, ou vários dados sem simetria precisando de faces raras ao mesmo tempo. Reduza a quantidade, aumente o elemento ou diminua `diceSizePx`.
   - `RESULT_MISMATCH`: o motor não conseguiu garantir o valor na tela e removeu os dados. Mostre o resultado oficial por outro meio.
@@ -143,9 +211,9 @@ localStorage.setItem('tema', serializeTheme(engine.getTheme('tema-da-ana')!));
 
 ## Ciclo de vida
 
-- Uma rolagem por vez: uma nova rolagem cancela a anterior e limpa a mesa.
-- `engine.clear()` remove os dados que ficaram na mesa.
-- Chame `engine.destroy()` ao remover o elemento da página. Depois disso a instância não pode ser reutilizada.
+- Uma rolagem na mesa por vez: as outras esperam na fila (ou substituem a atual, com `replace`). Quando uma começa, os dados da anterior saem da mesa.
+- `engine.clear()` cancela a rolagem em andamento e a fila e remove os dados da mesa.
+- Chame `engine.destroy()` ao remover o elemento da página. Ele cancela as rolagens pendentes, remove os ouvintes que o motor registrou na página, para o laço de render, fecha o áudio, libera geometrias, texturas e o contexto WebGL e remove o canvas. Depois disso a instância não pode ser reutilizada. Criar e destruir motores repetidamente não acumula contextos WebGL (testado com 20 ciclos).
 
 ## Exemplos por sistema
 
@@ -299,7 +367,22 @@ engine.effects.setLevel('off'); // nenhum objeto de efeito é criado
 
 ## Empacotamento
 
-- A biblioteca é distribuída como ESM, com declarações de tipos.
+- A biblioteca é distribuída como ESM, com declarações de tipos. As declarações não dependem dos tipos do three nem do Rapier: um projeto TypeScript estrito compila sem `@types/three` e com `skipLibCheck: false`.
 - `three` e `@dimforge/rapier3d-deterministic-compat` são dependências resolvidas pelo bundler da aplicação, não embutidas. A fonte dos números (Atkinson Hyperlegible Next, OFL) vem embutida no pacote. O Rapier (alguns MB) é carregado por `import()` dinâmico, só quando um motor é criado.
 - Os sons (`assets/sounds/`, cerca de 1,2 MB em WAV) vêm no pacote como arquivos, fora do JavaScript. A aplicação os serve e informa `audio.baseUrl` (ver [Áudio](#áudio)).
 - Depois que os recursos locais estão disponíveis, nenhuma conexão com a internet é necessária.
+
+## Projetos de exemplo
+
+[`examples/javascript`](../examples/javascript/) e [`examples/typescript`](../examples/typescript/) são projetos Vite mínimos: um botão que rola 2d6 no modo autônomo e outro que simula uma mensagem do servidor. Para rodar um deles:
+
+```sh
+npm run build          # na raiz do 3dados
+cd examples/typescript
+npm install
+npm run dev
+```
+
+O `vite.config.js` de cada um mostra como servir os sons do pacote: `publicDir: 'node_modules/3dados/assets'` e `audio.baseUrl: '/sounds/'`.
+
+`npm run test:consumer`, na raiz, empacota a biblioteca como iria para o npm e instala o pacote em cópias dos dois exemplos fora do repositório. Depois compila cada um (no TypeScript, com `tsc` estrito antes), confere que o Rapier ficou num pedaço separado e que os sons foram copiados, e usa os dois no navegador.

@@ -1,10 +1,10 @@
 # API
 
-A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto de entrada suportado é o módulo `3dados`.
+A API é `0.x`: pode mudar entre versões menores até a 1.0. O único ponto de entrada suportado é o módulo `3dados`.
 
-Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
+Todas as funcionalidades das Etapas 1 a 8 estão implementadas. O que fica de fora do motor está em [Fora do escopo](#fora-do-escopo).
 
-## Disponível hoje (0.7.0)
+## Disponível hoje (0.8.0)
 
 Dados disponíveis: **d4, d6, d8, d10, d12, d20 e d100**, mais dados personalizados registrados pela aplicação.
 
@@ -23,26 +23,32 @@ const engine = await DiceEngine.create(container, {
   theme: meuTema, // ThemeConfig opcional; vira o tema padrão
   audio: { baseUrl: '/3dados/sounds/' }, // AudioOptions; ver "Áudio"
   effects: { level: 'auto' }, // EffectsOptions; ver "Efeitos"
+  concurrency: 'queue', // | 'replace'; ver "Rolagens simultâneas"
+  queue: { maxPending: 8, holdMs: 1500 }, // RollQueueOptions
+  remote: {}, // RemoteOptions; ver "Mensagens externas"
 });
 ```
 
-`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `audio` ou `effects` forem inválidos. `presentation`, `quality`, `theme`, `audio` e `effects` estão descritos em [Aparência](#aparência), [Temas](#temas), [Áudio](#áudio) e [Efeitos](#efeitos).
+`create` carrega a física, roda algumas simulações descartáveis para aquecê-la e insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL, com `INVALID_THEME` se `theme` for inválido e com `INVALID_ARGUMENT` se `audio`, `effects`, `concurrency`, `queue` ou `remote` forem inválidos (campo em `details.path`). `presentation`, `quality`, `theme`, `audio` e `effects` estão descritos em [Aparência](#aparência), [Temas](#temas), [Áudio](#áudio) e [Efeitos](#efeitos).
 
-| Método                         | Efeito                                                                                                          |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `roll(request): RollHandle`    | Inicia uma rolagem. Nunca lança.                                                                                |
-| `cancel(rollId?): boolean`     | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado.                   |
-| `clear(): void`                | Cancela a rolagem em andamento e remove os dados da mesa.                                                       |
-| `on(evento, ouvinte)`          | Registra um ouvinte; devolve a função que o remove.                                                             |
-| `registerDie(definition)`      | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                                  |
-| `getDiceOnTable(): TableDie[]` | Dados físicos na mesa, com a posição e a orientação reais das malhas.                                           |
-| `registerTheme(theme)`         | Registra ou substitui um tema. Lança `DiceError` `INVALID_THEME` se for inválido.                               |
-| `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.                                |
-| `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                                    |
-| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.                             |
-| `audio: DiceAudioControls`     | Controles do áudio. Ver [Áudio](#áudio).                                                                        |
-| `effects: DiceEffectsControls` | Controles dos efeitos visuais. Ver [Efeitos](#efeitos).                                                         |
-| `destroy(): void`              | Cancela, libera GPU, fecha o áudio, encerra os efeitos e remove o canvas. A instância não pode ser reutilizada. |
+| Método                         | Efeito                                                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `roll(request): RollHandle`    | Inicia ou enfileira uma rolagem. Nunca lança.                                                                           |
+| `cancel(rollId?): boolean`     | Sem `rollId`, cancela a rolagem em andamento (não a fila). Com `rollId`, essa, na mesa ou na fila. Devolve se cancelou. |
+| `clear(): void`                | Cancela a rolagem em andamento e as da fila e remove os dados da mesa.                                                  |
+| `on(evento, ouvinte)`          | Registra um ouvinte; devolve a função que o remove.                                                                     |
+| `registerDie(definition)`      | Registra um dado personalizado. Lança `DiceError` se a definição for inválida.                                          |
+| `getDiceOnTable(): TableDie[]` | Dados físicos na mesa, com a posição e a orientação reais das malhas.                                                   |
+| `registerTheme(theme)`         | Registra ou substitui um tema. Lança `DiceError` `INVALID_THEME` se for inválido.                                       |
+| `setDefaultTheme(id)`          | Define o tema padrão. Lança `INVALID_ARGUMENT` se o tema não estiver registrado.                                        |
+| `getTheme(id)`                 | Cópia de um tema registrado, ou `undefined`.                                                                            |
+| `quality: RenderQuality`       | Qualidade efetiva do render (`low`, `medium` ou `high`), depois de resolver `auto`.                                     |
+| `audio: DiceAudioControls`     | Controles do áudio. Ver [Áudio](#áudio).                                                                                |
+| `effects: DiceEffectsControls` | Controles dos efeitos visuais. Ver [Efeitos](#efeitos).                                                                 |
+| `remote: DiceRemoteControls`   | Mensagens de um servidor externo. Ver [Mensagens externas](#mensagens-externas-multiplayer).                            |
+| `getState(): EngineState`      | Retrato do motor (rolagem ativa, fila, mesa, opções). Ver [Estado e estatísticas](#estado-e-estatísticas).              |
+| `getStats(): EngineStats`      | Contadores medidos desde a criação. Ver [Estado e estatísticas](#estado-e-estatísticas).                                |
+| `destroy(): void`              | Cancela tudo, libera GPU, fecha o áudio, encerra os efeitos e remove o canvas. A instância não pode ser reutilizada.    |
 
 ```ts
 interface RollHandle {
@@ -54,10 +60,10 @@ interface RollHandle {
 
 Comportamento:
 
-- **Uma rolagem por vez.** Uma nova rolagem cancela a anterior (motivo `superseded`) e remove os dados que estavam na mesa. Fila ou sobreposição é decisão da Etapa 8.
-- Os dados de uma rolagem concluída ficam na mesa até a próxima rolagem ou `clear()`.
-- Um pedido inválido resolve com `status: 'failed'` e não interfere na rolagem em andamento.
-- Depois de `destroy()`, `roll` resolve com `ENGINE_DESTROYED`.
+- **Uma rolagem na mesa por vez.** Com `concurrency: 'queue'` (padrão), uma rolagem que chega com outra em andamento espera a vez; com `'replace'`, ela cancela a anterior (motivo `superseded`). Ver [Rolagens simultâneas](#rolagens-simultâneas).
+- Os dados de uma rolagem concluída ficam na mesa até a próxima rolagem começar ou até `clear()`.
+- Um pedido inválido resolve com `status: 'failed'` na hora e não interfere na rolagem em andamento nem na fila.
+- Depois de `destroy()`, `roll` resolve com `ENGINE_DESTROYED`, e as rolagens pendentes resolvem com `cancelled` (`destroyed`).
 - Uma rolagem só é concluída depois de o motor ler, na cena, a face que cada dado exibe. Se divergir do valor oficial, o desfecho é `failed` com `RESULT_MISMATCH` e os dados são removidos da tela.
 
 ### Pedido de rolagem
@@ -86,7 +92,9 @@ interface RollRequest {
 interface RollMetadata {
   playerId?: string;
   roomId?: string;
-  visibility?: 'public' | 'private' | 'blind'; // ainda sem efeito no motor
+  visibility?: 'public' | 'private' | 'blind'; // só repassado; sem efeito no motor
+  sequence?: number; // preenchido nas rolagens remotas
+  sentAt?: number; // preenchido nas rolagens remotas
   [key: string]: unknown;
 }
 ```
@@ -111,14 +119,14 @@ interface RollCompleted {
   rollId: string;
   dice: readonly DieResult[];
   total: number; // soma dos valores; interpretação é da aplicação
-  durationMs: number; // do pedido até a conclusão
+  durationMs: number; // do pedido até a conclusão, inclusive a espera na fila
   metadata?: RollMetadata;
 }
 
 interface RollCancelled {
   status: 'cancelled';
   rollId: string;
-  reason: 'caller' | 'superseded' | 'cleared' | 'destroyed';
+  reason: 'caller' | 'superseded' | 'cleared' | 'remote' | 'destroyed';
   metadata?: RollMetadata;
 }
 
@@ -147,6 +155,14 @@ interface DieComponentResult {
   faceId: string;
 }
 ```
+
+| `reason`     | Quando                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| `caller`     | `cancel()` ou `handle.cancel()`.                                                           |
+| `superseded` | Outra rolagem tomou o lugar: no modo `replace`, ou a mais antiga da fila com a fila cheia. |
+| `cleared`    | `clear()` ou `table.cleared` remoto.                                                       |
+| `remote`     | Mensagem `roll.cancelled` do servidor.                                                     |
+| `destroyed`  | `destroy()`.                                                                               |
 
 ### Dados
 
@@ -221,6 +237,7 @@ As faces não precisam ser equivalentes entre si. Em um dado sem simetria entre 
 | `rollCancelled` | `RollCancelled`                                                     | A rolagem foi cancelada.                           |
 | `rollFailed`    | `RollFailed`                                                        | A rolagem falhou, inclusive por pedido inválido.   |
 
+- Uma rolagem na fila só emite `rollStarted` quando sai dela. Cancelada enquanto espera, emite apenas `rollCancelled`.
 - `simulation` é `{ attempts, cpuTimeMs }`: medições reais da pré-simulação daquela rolagem.
 - `other` é `{ kind: 'die', dieId }` ou `{ kind: 'surface' }` (mesa e paredes).
 - `intensity` vai de 0 a 1: variação de velocidade causada pelo impacto, relativa à velocidade de lançamento. Contatos contínuos de um dado rolando não geram eventos. O áudio reconstrói os tombos a partir da trajetória gravada (ver [Áudio](#áudio)); o evento não mudou.
@@ -234,19 +251,20 @@ import { DiceError, isDiceError } from '3dados';
 
 `DiceError` tem `code`, `message`, `details?` e `cause?`. Decida pelo código:
 
-| Código                    | Significado                                           |
-| ------------------------- | ----------------------------------------------------- |
-| `INVALID_ARGUMENT`        | Argumento inválido em uma função da biblioteca.       |
-| `INVALID_REQUEST`         | Pedido de rolagem malformado.                         |
-| `UNKNOWN_DIE_TYPE`        | Tipo de dado não registrado.                          |
-| `INVALID_DIE_DEFINITION`  | Definição de dado personalizado inválida.             |
-| `INVALID_THEME`           | Tema inválido ou de versão não suportada.             |
-| `SIMULATION_FAILED`       | A simulação não convergiu no orçamento de tentativas. |
-| `RESULT_MISMATCH`         | O valor exibido divergiu do oficial.                  |
-| `UNSUPPORTED_ENVIRONMENT` | Recurso de plataforma indisponível.                   |
-| `ASSET_LOAD_FAILED`       | Um arquivo externo (um som) não carregou.             |
-| `ENGINE_DESTROYED`        | A instância já foi destruída.                         |
-| `INTERNAL_ERROR`          | Falha inesperada; `cause` traz o erro original.       |
+| Código                    | Significado                                            |
+| ------------------------- | ------------------------------------------------------ |
+| `INVALID_ARGUMENT`        | Argumento inválido em uma função da biblioteca.        |
+| `INVALID_REQUEST`         | Pedido de rolagem malformado.                          |
+| `INVALID_MESSAGE`         | Mensagem remota malformada ou de versão não suportada. |
+| `UNKNOWN_DIE_TYPE`        | Tipo de dado não registrado.                           |
+| `INVALID_DIE_DEFINITION`  | Definição de dado personalizado inválida.              |
+| `INVALID_THEME`           | Tema inválido ou de versão não suportada.              |
+| `SIMULATION_FAILED`       | A simulação não convergiu no orçamento de tentativas.  |
+| `RESULT_MISMATCH`         | O valor exibido divergiu do oficial.                   |
+| `UNSUPPORTED_ENVIRONMENT` | Recurso de plataforma indisponível.                    |
+| `ASSET_LOAD_FAILED`       | Um arquivo externo (um som) não carregou.              |
+| `ENGINE_DESTROYED`        | A instância já foi destruída.                          |
+| `INTERNAL_ERROR`          | Falha inesperada; `cause` traz o erro original.        |
 
 ### Física
 
@@ -581,44 +599,195 @@ interface RandomSource {
 ### `VERSION`
 
 ```ts
-import { VERSION } from '3dados'; // '0.7.0'
+import { VERSION } from '3dados'; // '0.8.0'
 ```
 
-## Proposto (ainda não implementado)
+### Rolagens simultâneas
+
+A mesa mostra uma rolagem por vez. `concurrency` decide o que acontece quando chega outra com uma em andamento:
+
+| `concurrency`    | Efeito                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `queue` (padrão) | A nova espera a vez. Quando a anterior conclui, os dados dela ficam à vista por pelo menos `queue.holdMs` antes de a próxima começar. |
+| `replace`        | A nova cancela a anterior (`superseded`) e começa na hora. É o comportamento das versões até a 0.7.                                   |
 
 ```ts
-engine.remote.receive(envelope);
-engine.getState();
-engine.getStats();
-```
-
-| Funcionalidade                                         | Etapa |
-| ------------------------------------------------------ | ----- |
-| `remote`, `getState`, `getStats`, rolagens simultâneas | 8     |
-
-### Mensagens externas (multiplayer)
-
-```ts
-interface RollEnvelope {
-  protocolVersion: 1;
-  type: 'roll.requested' | 'roll.cancelled' | 'table.cleared';
-  rollId: string;
-  roomId: string;
-  playerId: string;
-  sequence: number; // crescente por sala
-  sentAt: number; // epoch em ms
-  visibility: 'public' | 'private' | 'blind';
-  payload: unknown; // depende de `type`
+interface RollQueueOptions {
+  maxPending?: number; // rolagens esperando, sem contar a da mesa. 1 a 64; padrão 8
+  holdMs?: number; // tempo mínimo de exibição do resultado. 0 a 10.000; padrão 1500
 }
 ```
 
-Tratamento previsto:
+- Os valores são decididos quando a rolagem é pedida, não quando ela sai da fila.
+- Com a fila cheia, a rolagem mais antiga que ainda espera é cancelada (`superseded`) para dar lugar à nova.
+- Uma rolagem cancelada ou com falha não segura a mesa: a próxima começa logo.
+- `clear()` e `table.cleared` esvaziam a fila (`cleared`). `cancel()` sem `rollId` cancela só a rolagem em andamento; a próxima da fila começa em seguida.
+- `durationMs` do desfecho inclui a espera na fila.
+- `ROLL_CONCURRENCY` e `ROLL_QUEUE_LIMITS` são exportados.
 
-- Mensagem repetida com o mesmo `rollId` é descartada.
-- `roll.cancelled` que chega antes do pedido impede a rolagem quando o pedido chegar.
-- Pedido anterior ao último `table.cleared`, ou mais antigo que o tempo de validade, é ignorado.
-- O motor não aplica permissões: a aplicação decide quem recebe cada mensagem.
+### Mensagens externas (multiplayer)
+
+Em multiplayer, o servidor é a autoridade dos valores, da ordem, das permissões e do histórico. O motor recebe as mensagens que a aplicação repassa e decide o que fazer com cada uma: aplicar, descartar como repetida ou obsoleta, ou recusar. O transporte (WebSocket, SSE, outro) é da aplicação.
+
+```ts
+import { PROTOCOL_VERSION, type RollEnvelope } from '3dados';
+
+const receipt = engine.remote.receive(mensagemDoServidor); // nunca lança
+if (receipt.roll) {
+  const outcome = await receipt.roll.result;
+}
+```
+
+```ts
+interface RemoteEnvelopeBase {
+  protocolVersion: 1; // PROTOCOL_VERSION
+  roomId: string; // 1 a 128 caracteres
+  playerId: string; // quem originou a mensagem; 1 a 128 caracteres
+  sequence: number; // inteiro ≥ 0, crescente por sala, atribuído pelo servidor
+  sentAt: number; // ms desde a época, no relógio do servidor
+}
+
+interface RollRequestedEnvelope extends RemoteEnvelopeBase {
+  type: 'roll.requested';
+  rollId: string; // vira o id da rolagem; 1 a 128 caracteres
+  visibility?: 'public' | 'private' | 'blind'; // padrão 'public'; só repassado
+  payload: {
+    dice: readonly DieSpec[]; // todo grupo precisa de `values`
+    seed?: number;
+    effects?: readonly EffectTrigger[];
+    metadata?: Record<string, unknown>;
+  };
+}
+
+interface RollCancelledEnvelope extends RemoteEnvelopeBase {
+  type: 'roll.cancelled';
+  rollId: string;
+}
+
+interface TableClearedEnvelope extends RemoteEnvelopeBase {
+  type: 'table.cleared';
+}
+
+type RollEnvelope = RollRequestedEnvelope | RollCancelledEnvelope | TableClearedEnvelope;
+```
+
+- **Os valores vêm do servidor.** Um `roll.requested` sem `values` em algum grupo é recusado (`INVALID_MESSAGE`). Um cliente nunca sorteia o valor de outro jogador.
+- O `metadata` da rolagem é o `payload.metadata` mais `playerId`, `roomId`, `visibility`, `sequence` e `sentAt` do envelope; os campos do envelope valem sobre os da aplicação.
+- Uma rolagem remota entra na fila como qualquer outra (ou substitui, com `replace`).
+- `visibility` não muda nada no motor. Quem não deve ver uma rolagem privada não deve recebê-la: a aplicação filtra antes de repassar.
+
+O recibo diz o que o motor fez:
+
+```ts
+interface RemoteReceipt {
+  status: 'applied' | 'duplicate' | 'stale' | 'cancelled' | 'rejected';
+  reason?: RemoteReason; // quando não foi aplicada do jeito comum
+  type?: 'roll.requested' | 'roll.cancelled' | 'table.cleared'; // ausentes se ilegível
+  roomId?: string;
+  sequence?: number;
+  rollId?: string;
+  roll?: RollHandle; // só em roll.requested aplicado
+  error?: DiceError; // só em rejected
+}
+```
+
+| `status`    | `reason`                   | Situação                                                                                                                |
+| ----------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `applied`   | —                          | Pedido enfileirado ou iniciado, cancelamento ou limpeza feitos.                                                         |
+| `applied`   | `awaiting-request`         | Cancelamento de uma rolagem que ainda não chegou: fica guardado.                                                        |
+| `duplicate` | `same-sequence`            | Mesma `sequence` já recebida na sala.                                                                                   |
+| `duplicate` | `same-roll`                | Mesmo `rollId` já pedido (ou já cancelado) na sala.                                                                     |
+| `stale`     | `out-of-order`             | Pedido ou limpeza mais antigos que um pedido ou limpeza já aplicados na sala.                                           |
+| `stale`     | `before-clear`             | Pedido anterior ao último `table.cleared`.                                                                              |
+| `stale`     | `expired`                  | `sentAt` mais velho que `remote.maxAgeMs`.                                                                              |
+| `stale`     | `already-finished`         | Cancelamento de uma rolagem que já terminou aqui.                                                                       |
+| `cancelled` | `cancelled-before-request` | O pedido chegou depois do seu cancelamento: a rolagem nunca começa.                                                     |
+| `rejected`  | `invalid-message`          | Forma inválida; `error.code` é `INVALID_MESSAGE` e `error.details.path` aponta o campo.                                 |
+| `rejected`  | `unsupported-version`      | `protocolVersion` diferente de `PROTOCOL_VERSION`.                                                                      |
+| `rejected`  | `invalid-roll`             | Envelope válido, rolagem inválida (tipo desconhecido, valor fora da faixa...); `INVALID_REQUEST` ou `UNKNOWN_DIE_TYPE`. |
+| `rejected`  | —                          | Motor destruído (`ENGINE_DESTROYED`).                                                                                   |
+
+Regras de ordem, por sala:
+
+- **A mesa segue a ordem do servidor.** Um pedido atrasado, mais antigo que o último já aplicado, é descartado em vez de interromper o mais novo. Dois clientes que recebem as mesmas mensagens em ordens diferentes terminam com a mesma rolagem na mesa.
+- **Cancelamento vale em qualquer ordem.** Ele é aplicado pelo `rollId`, esteja a rolagem na mesa ou na fila (motivo `remote`). Antes do pedido, fica guardado e impede a rolagem quando o pedido chegar.
+- **Buracos na sequência não bloqueiam.** Um cliente não recebe as rolagens privadas dos outros; o motor nunca espera uma sequência que falta.
+- O motor lembra até 512 mensagens e rolagens por sala e até 64 salas (`REMOTE_LIMITS`). `engine.remote.reset(roomId?)` esquece o histórico, para reconexão ou troca de sala: depois dela, uma sequência reiniciada pelo servidor volta a ser aceita.
+
+```ts
+interface RemoteOptions {
+  maxAgeMs?: number; // descarta mensagens mais velhas que isto (Date.now() - sentAt). Padrão: sem limite
+}
+```
+
+`maxAgeMs` compara o relógio local com o do servidor. Use só se a aplicação alinhar os dois; um relógio adiantado descartaria tudo.
+
+`engine.remote.getStats()` devolve `{ received, applied, duplicate, stale, cancelled, rejected }`.
+
+`parseEnvelope(input)` é a validação usada por `receive`, exportada para quem quiser conferir uma mensagem no servidor ou nos testes: devolve o envelope tipado ou lança `INVALID_MESSAGE`.
+
+Exportados: `PROTOCOL_VERSION`, `REMOTE_LIMITS`, `REMOTE_MESSAGE_TYPES`, `ROLL_VISIBILITIES`, `parseEnvelope` e os tipos `DiceRemoteControls`, `RemoteEnvelopeBase`, `RemoteOptions`, `RemoteReason`, `RemoteReceipt`, `RemoteReceiptStatus`, `RemoteRollPayload`, `RemoteStats`, `RollCancelledEnvelope`, `RollEnvelope`, `RollRequestedEnvelope` e `TableClearedEnvelope`.
+
+### Estado e estatísticas
+
+```ts
+const state = engine.getState();
+const stats = engine.getStats();
+```
+
+Os dois devolvem um objeto novo a cada chamada, sem referências internas: podem ser serializados, guardados e comparados.
+
+```ts
+interface EngineState {
+  status: 'idle' | 'rolling' | 'destroyed'; // rolling: há rolagem na mesa ou na fila
+  activeRoll: PendingRoll | null; // sendo simulada ou animada
+  queue: readonly PendingRoll[]; // na ordem em que vão começar
+  tableRollId: string | null; // rolagem cujos dados estão na mesa
+  diceOnTable: number; // dados físicos (um d100 conta dois)
+  concurrency: 'queue' | 'replace';
+  presentation: 'overlay' | 'tray';
+  quality: 'low' | 'medium' | 'high';
+  defaultTheme: string;
+  themes: readonly string[];
+  dieTypes: readonly string[]; // inclusive os personalizados
+  audio: { enabled: boolean; state: AudioState; volume: number; surface: Surface };
+  effects: { level: EffectLevel; levelSetting: EffectLevelSetting };
+}
+
+interface PendingRoll {
+  rollId: string;
+  phase: 'queued' | 'simulating' | 'animating';
+  metadata?: RollMetadata;
+}
+
+interface EngineStats {
+  rolls: {
+    requested: number; // inclusive pedidos inválidos e rolagens remotas aplicadas
+    completed: number;
+    cancelled: number;
+    failed: number; // inclusive pedidos inválidos
+    recovered: number; // concluídas com algum dado `recovered`
+    queuePeak: number; // maior tamanho que a fila já teve
+  };
+  simulation: {
+    last: { attempts: number; cpuTimeMs: number } | null;
+    totalAttempts: number;
+    totalCpuTimeMs: number;
+  };
+  remote: RemoteStats;
+  audio: AudioStats;
+  effects: EffectStats;
+}
+```
+
+Todos os números são contados ou medidos; nenhum é estimado.
+
+### Tipos públicos
+
+As declarações (`.d.ts`) do pacote não importam tipos do three nem do Rapier. Um projeto TypeScript estrito, com `skipLibCheck: false` e sem `@types/three`, compila contra o `3dados` (conferido pelo teste de consumo, `npm run test:consumer`).
 
 ### Fora do escopo
 
-Parser de notação (`2d6+3`), modificadores e qualquer interpretação de regra.
+- Parser de notação (`2d6+3`), modificadores e qualquer interpretação de regra.
+- Backend, transporte, autenticação e permissões: o motor só recebe as mensagens que a aplicação decide repassar.
+- Trajetórias idênticas entre clientes: todos veem o mesmo resultado, não necessariamente o mesmo movimento ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).

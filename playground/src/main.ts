@@ -7,11 +7,13 @@ import {
   type EffectLevelSetting,
   type Presentation,
   type QualitySetting,
+  type RollConcurrency,
   type RollOutcome,
   type RollRequest,
 } from '3dados';
 import { createAudioPanel } from './audio-panel';
 import { PLAYGROUND_PRESETS, createEffectsPanel } from './effects-panel';
+import { createIntegrationPanel } from './integration-panel';
 import { createThemePanel, type ThemePanel } from './theme-panel';
 
 interface Diagnostic {
@@ -159,31 +161,42 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Opções de criação do motor, lidas da URL (`?presentation=tray&quality=low`). */
-function readEngineOptions(): { presentation: Presentation; quality: QualitySetting } {
+interface DisplayOptions {
+  presentation: Presentation;
+  quality: QualitySetting;
+  concurrency: RollConcurrency;
+}
+
+/** Opções de criação do motor, lidas da URL (`?presentation=tray&quality=low&concurrency=replace`). */
+function readEngineOptions(): DisplayOptions {
   const params = new URLSearchParams(location.search);
   const presentation = params.get('presentation') === 'tray' ? 'tray' : 'overlay';
   const quality = params.get('quality');
   return {
     presentation,
     quality: quality === 'low' || quality === 'medium' || quality === 'high' ? quality : 'auto',
+    concurrency: params.get('concurrency') === 'replace' ? 'replace' : 'queue',
   };
 }
 
 /** Selects de exibição: mudar uma opção de criação recarrega a página com ela na URL. */
-function setupDisplayPanel(options: { presentation: Presentation; quality: QualitySetting }) {
+function setupDisplayPanel(options: DisplayOptions) {
   const presentation = byTestId<HTMLSelectElement>('presentation-select');
   const quality = byTestId<HTMLSelectElement>('quality-select');
+  const concurrency = byTestId<HTMLSelectElement>('concurrency-select');
   presentation.value = options.presentation;
   quality.value = options.quality;
+  concurrency.value = options.concurrency;
   const reload = () => {
     const params = new URLSearchParams(location.search);
     params.set('presentation', presentation.value);
     params.set('quality', quality.value);
+    params.set('concurrency', concurrency.value);
     location.search = params.toString();
   };
-  presentation.addEventListener('change', reload);
-  quality.addEventListener('change', reload);
+  for (const select of [presentation, quality, concurrency]) {
+    select.addEventListener('change', reload);
+  }
 }
 
 /** Lista os temas no seletor da rolagem, mantendo a escolha atual quando possível. */
@@ -308,6 +321,7 @@ async function start(): Promise<void> {
   renderRollThemes(themes.panel);
   createAudioPanel(engine);
   const effectsPanel = createEffectsPanel(engine);
+  createIntegrationPanel(engine);
   setStatus('pronto');
 
   // Acesso para depuração e para os testes de navegador, que leem a orientação

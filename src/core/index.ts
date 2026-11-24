@@ -14,6 +14,7 @@ export * from './face-reading';
 export * from './math';
 export * from './polyhedron';
 export * from './random';
+export * from './remote';
 export * from './roll-plan';
 export * from './symmetry';
 export * from './trajectory';

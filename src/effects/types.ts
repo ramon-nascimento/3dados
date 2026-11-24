@@ -109,3 +109,11 @@ export interface DiceEffectsControls {
   stopAll(): void;
   getStats(): EffectStats;
 }
+
+/** O que os efeitos precisam da plataforma. No navegador: `browserEffectsEnvironment()`. */
+export interface EffectsEnvironment {
+  /** Se o sistema pede menos movimento (`prefers-reduced-motion: reduce`). */
+  prefersReducedMotion(): boolean;
+  /** Chama `callback` quando a preferência muda. Devolve a remoção. */
+  onReducedMotionChange(callback: () => void): () => void;
+}

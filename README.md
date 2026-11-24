@@ -2,7 +2,7 @@
 
 Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual, efeitos visuais e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 7 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal), áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície) e efeitos visuais (brilhos, auras, rastros, explosões, elementais, destaque, crítico e falha) disparados por condições que a aplicação declara, com níveis de acessibilidade. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 8 concluída.** O motor rola **d4, d6, d8, d10, d12, d20, d100** e dados personalizados em um overlay transparente ou em uma bandeja, nos modos autônomo e controlado, com verificação do valor exibido, recuperação de rolagens densas, temas com seis materiais (plástico, madeira, pedra, metal, vidro e cristal), áudio contextual (lançamento, impactos, tombos e estabilização, por material e superfície) e efeitos visuais (brilhos, auras, rastros, explosões, elementais, destaque, crítico e falha) disparados por condições que a aplicação declara, com níveis de acessibilidade. Rolagens simultâneas entram numa fila, e mensagens de um servidor multiplayer (repetidas, atrasadas, fora de ordem ou canceladas antes do pedido) são tratadas pelo motor. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 
@@ -38,7 +38,13 @@ engine.registerTheme({
 engine.roll({ dice: [{ type: 'd20', theme: 'safira' }] });
 ```
 
-Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
+Em multiplayer, o servidor decide os valores e cada cliente repassa as mensagens ao motor:
+
+```ts
+socket.on('dice', (message) => engine.remote.receive(message));
+```
+
+Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md). Projetos completos em [examples/](examples/).
 
 ## Requisitos
 
@@ -47,17 +53,18 @@ Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
 
 ## Comandos
 
-| Comando                           | O que faz                                                               |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| `npm install`                     | Instala as dependências.                                                |
-| `npm run dev`                     | Abre o playground em `http://localhost:5173`.                           |
-| `npm run typecheck`               | Checagem de tipos.                                                      |
-| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.                    |
-| `npm test`                        | Testes unitários e de integração (Vitest).                              |
-| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas.                |
-| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).                              |
-| `npm run bench`                   | Medições da pré-simulação, do áudio e dos efeitos (fora do `npm test`). |
-| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).                       |
+| Comando                           | O que faz                                                                |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `npm install`                     | Instala as dependências.                                                 |
+| `npm run dev`                     | Abre o playground em `http://localhost:5173`.                            |
+| `npm run typecheck`               | Checagem de tipos.                                                       |
+| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.                     |
+| `npm test`                        | Testes unitários e de integração (Vitest).                               |
+| `npm run test:e2e`                | Testes no navegador (Playwright), inclusive as capturas.                 |
+| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).                               |
+| `npm run bench`                   | Medições da pré-simulação, do áudio e dos efeitos (fora do `npm test`).  |
+| `npm run test:consumer`           | Empacota a biblioteca, instala nos exemplos fora do repositório e testa. |
+| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).                        |
 
 ## Estrutura
 
@@ -69,9 +76,10 @@ src/            biblioteca (único ponto de entrada: src/index.ts)
   customization/  temas
   audio/          sons
   effects/        efeitos visuais
-  integration/    fachada DiceEngine e contratos externos
+  integration/    fachada DiceEngine, fila e mensagens externas
 playground/     aplicação de demonstração
-tests/          unit · integration · e2e · visual
+examples/       projetos mínimos de integração (JavaScript e TypeScript)
+tests/          unit · integration · e2e · visual · consumer
 docs/           arquitetura, API, plano, guia de integração, ADRs
 assets/         assets de terceiros (fonte, sons) e seus créditos
 ```

@@ -38,11 +38,9 @@ export interface DieSpec {
 }
 
 /**
- * Como a rolagem deve ser apresentada. O motor não aplica permissões: quem
- * decide quais clientes recebem a rolagem é a aplicação.
- * - `public`: dados e valores visíveis.
- * - `private`: igual a `public`, mas sinaliza que só parte da mesa a recebe.
- * - `blind`: os dados aparecem sem revelar os valores.
+ * Visibilidade declarada pelo servidor. O motor não aplica permissões nem muda
+ * a apresentação por ela: só repassa o valor em `metadata`. Quem decide quais
+ * clientes recebem a rolagem, e com quais valores, é o servidor.
  */
 export type RollVisibility = 'public' | 'private' | 'blind';
 
@@ -51,6 +49,10 @@ export interface RollMetadata {
   playerId?: string;
   roomId?: string;
   visibility?: RollVisibility;
+  /** Só em rolagens remotas: a `sequence` da mensagem na sala. */
+  sequence?: number;
+  /** Só em rolagens remotas: o `sentAt` da mensagem. */
+  sentAt?: number;
   [key: string]: unknown;
 }
 
@@ -103,7 +105,14 @@ export interface DieResult {
   recovered: boolean;
 }
 
-export type RollCancelReason = 'caller' | 'superseded' | 'cleared' | 'destroyed';
+/**
+ * - `caller`: `cancel()` ou `handle.cancel()`.
+ * - `superseded`: substituída por outra rolagem (`concurrency: 'replace'`, ou fila cheia).
+ * - `cleared`: `clear()` ou `table.cleared` remoto.
+ * - `remote`: `roll.cancelled` recebido do servidor.
+ * - `destroyed`: `destroy()`.
+ */
+export type RollCancelReason = 'caller' | 'superseded' | 'cleared' | 'remote' | 'destroyed';
 
 export interface RollCompleted {
   status: 'completed';

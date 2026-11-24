@@ -29,7 +29,7 @@ A tabela é definida em [`eslint.boundaries.js`](../eslint.boundaries.js) e exer
 | `customization` | Esquema de tema serializável e versionado, validação, migração, presets de material (aparência, parâmetros físicos e perfil sonoro).                                                                                                                                                    |
 | `audio`         | Planejamento dos sons a partir da gravação (impactos, tombos, lançamento, estabilização), banco de amostras com síntese de reserva, limite de vozes, variação de ganho e altura, compressor, desbloqueio por gesto do usuário.                                                          |
 | `effects`       | Camada de efeitos visuais em grupo próprio na cena: catálogo de efeitos internos (anel, halo e emissores de partículas), presets da aplicação, planejamento dos gatilhos do pedido, níveis `off`/`reduced`/`full`/`auto`, teto de partículas, limite de flashes e contagem de recursos. |
-| `integration`   | Fachada `DiceEngine`, fila de rolagens, contratos de mensagens externas, deduplicação e ordenação.                                                                                                                                                                                      |
+| `integration`   | Fachada `DiceEngine`, fila de rolagens, canal de mensagens externas (`engine.remote`), estado e estatísticas. A validação e a ordenação das mensagens são funções puras em `core`.                                                                                                      |
 
 Regras de separação:
 
@@ -53,7 +53,7 @@ As faces dos dados padrão são calculadas a partir dos vértices. Um dado compo
 
 O valor de cada dado é sempre conhecido **antes** de a animação começar ([ADR 0002](adr/0002-resultado-antes-da-animacao.md)).
 
-1. **Validar** o pedido e fixar o valor-alvo de cada dado: fornecido pela aplicação (modo controlado) ou sorteado pelo RNG interno (modo autônomo).
+1. **Validar** o pedido e fixar o valor-alvo de cada dado: fornecido pela aplicação (modo controlado) ou sorteado pelo RNG interno (modo autônomo). Se houver outra rolagem na mesa, a nova espera na fila a partir daqui, já com os valores fixados.
 2. **Pré-simular** a física inteira fora da tela, com passo fixo e condições iniciais semeadas, gravando posição e rotação a cada passo e a linha do tempo das colisões ([ADR 0003](adr/0003-pre-simulacao-gravada.md)).
 3. **Rejeitar e repetir** com outra semente se algum dado não estabilizou, saiu da área, ficou apoiado ou inclinado, ou estourou o tempo. A partir da terceira tentativa, um dado que para mal recebe um empurrão dentro da simulação em vez de invalidar a rolagem ([ADR 0008](adr/0008-recuperacao-e-lancamento-dirigido.md)).
 4. **Reorientar por simetria**: aplicar à malha, desde o primeiro quadro, a rotação de simetria do poliedro que coloca a face do valor-alvo onde a face física vai terminar para cima ([ADR 0004](adr/0004-reorientacao-por-simetria.md)).
@@ -106,9 +106,25 @@ O `integration` escolhe o perfil de cada dado pelo tema (`soundProfile` ou o do 
 
 Os sons do pacote são arquivos em `assets/sounds/`, nunca importados pelo código: no modo biblioteca do Vite eles virariam base64 dentro do JavaScript.
 
-## Multiplayer
+## Fila e multiplayer
 
-O motor não é a autoridade dos resultados: recebe os valores oficiais de um servidor externo e garante que a animação os exiba. A sincronização obrigatória é de resultados e estados, não de trajetórias. O contrato de mensagens (proposto em [API.md](API.md)) prevê identificador de rolagem, jogador, sala, sequência, versão de protocolo e visibilidade, com tratamento de duplicatas, mensagens fora de ordem e cancelamentos obsoletos. O backend não faz parte deste projeto.
+O motor não é a autoridade dos resultados: recebe os valores oficiais de um servidor externo e garante que a animação os exiba. A sincronização obrigatória é de resultados e estados, não de trajetórias. O backend não faz parte deste projeto ([ADR 0012](adr/0012-mensagens-remotas-e-fila.md)).
+
+| Peça         | Onde                       | O que faz                                                                                                                                                                               |
+| ------------ | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Validação    | `parseEnvelope()` (core)   | Forma do `RollEnvelope` (versão, tipo, ids, sequência, `values` obrigatórios); erro `INVALID_MESSAGE` com o caminho do campo. Os dados da rolagem são validados depois, por `planRoll`. |
+| Sequenciador | `RemoteSequencer` (core)   | Função de decisão por sala, sem DOM nem relógio próprio: repetida, obsoleta, cancelada antes do pedido ou aplicável. Histórico limitado por sala e número de salas.                     |
+| Canal        | `RemoteChannel`            | `engine.remote`: valida, consulta o sequenciador, traduz o envelope em `RollRequest` e chama o motor; devolve o recibo e conta as mensagens.                                            |
+| Opções       | `parseRollOptions()`       | `concurrency`, `queue` e `remote` de `DiceEngine.create`, com `INVALID_ARGUMENT` e o caminho do campo.                                                                                  |
+| Fila         | `DiceEngine` (integration) | Rolagens com fase (`queued`, `simulating`, `animating`). Uma por vez na mesa; a próxima começa quando a mesa fica livre e o resultado anterior ficou à vista `holdMs`.                  |
+
+O canal não conhece a fila: entrega pedidos, cancelamentos por id e limpezas por uma interface pequena (`RemoteHost`). Rolagens locais e remotas passam pelo mesmo caminho (`submit`), então a fila, o cancelamento e os eventos são os mesmos para as duas.
+
+`getState()` e `getStats()` montam objetos novos a cada chamada a partir do estado interno e dos contadores do motor, do áudio, dos efeitos e do canal.
+
+## Tipos públicos
+
+As declarações publicadas não podem depender de `three` nem do Rapier: o consumidor não tem `@types/three`, e as declarações do Rapier exigem `lib` recente (`Symbol.dispose`). Os tipos que a API pública expõe ficam em arquivos-folha sem esses imports (`renderer/types.ts`, `physics/types.ts`, `effects/types.ts`), e `integration` e o índice importam deles. O teste de consumo compila um projeto TypeScript estrito contra o pacote empacotado para garantir isso.
 
 ## Tecnologias
 
@@ -139,25 +155,28 @@ O `integration` planeja os efeitos logo depois do plano da rolagem (gatilhos do 
 
 ## Testes
 
-| Pasta               | Ferramenta | Escopo                                   |
-| ------------------- | ---------- | ---------------------------------------- |
-| `tests/unit`        | Vitest     | Lógica pura, sem GPU nem WASM.           |
-| `tests/integration` | Vitest     | Módulos com Rapier real, em Node.        |
-| `tests/e2e`         | Playwright | Playground em navegador real.            |
-| `tests/visual`      | Playwright | Capturas de referência com semente fixa. |
+| Pasta               | Ferramenta | Escopo                                                                       |
+| ------------------- | ---------- | ---------------------------------------------------------------------------- |
+| `tests/unit`        | Vitest     | Lógica pura, sem GPU nem WASM.                                               |
+| `tests/integration` | Vitest     | Módulos com Rapier real, em Node.                                            |
+| `tests/e2e`         | Playwright | Playground em navegador real.                                                |
+| `tests/visual`      | Playwright | Capturas de referência com semente fixa.                                     |
+| `tests/consumer`    | Playwright | Exemplos instalados a partir do pacote empacotado (`npm run test:consumer`). |
 
 ## Principais riscos
 
-| Risco                                        | Mitigação                                                                              |
-| -------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Geometria do d10 e leitura do d4             | Construção analítica; testes de planaridade, convexidade e leitura para toda face.     |
-| Erro na reorientação mostraria valor errado  | Teste exaustivo de todos os pares de faces; dupla verificação em tempo de execução.    |
-| Pré-simulação trava a thread principal       | Medir; fatiar em quadros ou mover para Worker.                                         |
-| Dados que não estabilizam                    | Rejeição e nova semente fora da tela; recuperação marcada.                             |
-| Peso do Rapier (≈4,3 MB antes de compressão) | Carregamento por `import()` dinâmico; teste de consumo em projeto mínimo.              |
-| Three.js sem versionamento semântico         | Versão exata; uso confinado a `renderer` e `effects`.                                  |
-| Vidro e cristal caros em GPU fraca           | Níveis de qualidade; transmissão só em `high` com bandeja.                             |
-| Autoplay de áudio e licença de sons          | Desbloqueio por gesto; só CC0, com créditos testados; síntese de reserva sem arquivos. |
-| Efeitos desconfortáveis ou caros             | Nível `auto` segue `prefers-reduced-motion`; flash limitado; teto de partículas.       |
-| Perda de contexto WebGL e vazamentos         | Recursos de GPU reconstruíveis; teste de memória após `destroy()`.                     |
-| Testes visuais instáveis entre GPUs          | Semente fixa, quadro congelado, tolerância, plataforma de referência única.            |
+| Risco                                           | Mitigação                                                                                                                  |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Geometria do d10 e leitura do d4                | Construção analítica; testes de planaridade, convexidade e leitura para toda face.                                         |
+| Erro na reorientação mostraria valor errado     | Teste exaustivo de todos os pares de faces; dupla verificação em tempo de execução.                                        |
+| Pré-simulação trava a thread principal          | Medir; fatiar em quadros ou mover para Worker.                                                                             |
+| Dados que não estabilizam                       | Rejeição e nova semente fora da tela; recuperação marcada.                                                                 |
+| Peso do Rapier (≈4,3 MB antes de compressão)    | Carregamento por `import()` dinâmico; teste de consumo em projeto mínimo.                                                  |
+| Three.js sem versionamento semântico            | Versão exata; uso confinado a `renderer` e `effects`.                                                                      |
+| Vidro e cristal caros em GPU fraca              | Níveis de qualidade; transmissão só em `high` com bandeja.                                                                 |
+| Autoplay de áudio e licença de sons             | Desbloqueio por gesto; só CC0, com créditos testados; síntese de reserva sem arquivos.                                     |
+| Efeitos desconfortáveis ou caros                | Nível `auto` segue `prefers-reduced-motion`; flash limitado; teto de partículas.                                           |
+| Perda de contexto WebGL e vazamentos            | Recursos de GPU reconstruíveis; `forceContextLoss()` no descarte; teste de memória, ouvintes e contextos após `destroy()`. |
+| Mensagens repetidas, atrasadas ou fora de ordem | Sequenciador por sala; testes com entregas em ordens diferentes convergindo na mesma mesa.                                 |
+| Tipos do three ou do Rapier vazando na API      | Tipos públicos em arquivos-folha; teste de consumo com TypeScript estrito.                                                 |
+| Testes visuais instáveis entre GPUs             | Semente fixa, quadro congelado, tolerância, plataforma de referência única.                                                |
