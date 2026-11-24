@@ -14,14 +14,76 @@
 
     <main class="layout">
       <section class="stage" aria-label="Área de rolagem">
-        <p class="stage-empty" data-testid="stage-empty">
-          Nenhum dado ainda. A primeira rolagem chega na Etapa 2.
+        <p class="stage-hint">
+          Conteúdo da aplicação (o mapa do VTT fica aqui, por baixo dos dados)
         </p>
+        <div id="dice" class="dice-overlay" data-testid="dice-overlay"></div>
       </section>
 
-      <aside class="panel" aria-label="Diagnóstico do ambiente">
-        <h2>Ambiente</h2>
-        <dl class="diagnostics" data-testid="diagnostics"></dl>
+      <aside class="panels">
+        <section class="panel" aria-labelledby="roll-title">
+          <h2 id="roll-title">Rolagem</h2>
+          <form id="roll-form" class="form">
+            <label>
+              Quantidade de d6
+              <input
+                data-testid="roll-count"
+                name="count"
+                type="number"
+                min="1"
+                max="50"
+                value="3"
+              />
+            </label>
+            <label>
+              Valores predeterminados
+              <input
+                data-testid="roll-values"
+                name="values"
+                type="text"
+                inputmode="numeric"
+                placeholder="ex.: 6, 1, 3 (vazio = sorteio)"
+                autocomplete="off"
+              />
+            </label>
+            <div class="buttons">
+              <button data-testid="roll-button" type="submit" class="primary">Rolar</button>
+              <button data-testid="cancel-button" type="button" id="cancel">Cancelar</button>
+              <button data-testid="clear-button" type="button" id="clear">Limpar</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel" aria-labelledby="result-title">
+          <h2 id="result-title">Resultado</h2>
+          <dl class="readout">
+            <dt>Estado</dt>
+            <dd data-testid="roll-status" aria-live="polite">iniciando…</dd>
+            <dt>Valores</dt>
+            <dd data-testid="roll-result-values">—</dd>
+            <dt>Total</dt>
+            <dd data-testid="roll-total">—</dd>
+          </dl>
+        </section>
+
+        <section class="panel" aria-labelledby="stats-title">
+          <h2 id="stats-title">Medições da última rolagem</h2>
+          <dl class="readout">
+            <dt>Pré-simulação</dt>
+            <dd data-testid="stat-presim">—</dd>
+            <dt>Tentativas</dt>
+            <dd data-testid="stat-attempts">—</dd>
+            <dt>Colisões</dt>
+            <dd data-testid="stat-collisions">—</dd>
+            <dt>Duração total</dt>
+            <dd data-testid="stat-duration">—</dd>
+          </dl>
+        </section>
+
+        <section class="panel" aria-labelledby="env-title">
+          <h2 id="env-title">Ambiente</h2>
+          <dl class="readout" data-testid="diagnostics"></dl>
+        </section>
       </aside>
     </main>
 

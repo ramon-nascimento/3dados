@@ -1,6 +1,6 @@
 # ADR 0004 — Resultados predeterminados por reorientação de simetria
 
-- **Estado:** aceita (2026-11-23); implementação na Etapa 4
+- **Estado:** aceita (2026-11-23); implementada na Etapa 2 e validada para o d6; demais dados e dados assimétricos na Etapa 4
 
 ## Contexto
 

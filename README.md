@@ -2,7 +2,7 @@
 
 Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convincente, dados personalizáveis, áudio contextual e uma API preparada para multiplayer, sem depender de nenhum framework de interface.
 
-> **Estado: Etapa 1 (fundação) concluída.** Ainda não há dados na tela. O que existe hoje são a estrutura do projeto, os contratos do núcleo, o gerador de números aleatórios e o ambiente de testes. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
+> **Estado: Etapa 2 concluída.** O motor rola **d6** em um overlay transparente, nos modos autônomo e controlado, com verificação do valor exibido. Ainda não há outros dados, temas, áudio nem efeitos. O andamento está em [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md).
 
 ## Princípios
 
@@ -11,6 +11,22 @@ Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convin
 - **Sem regras de RPG no motor.** Críticos, vantagem, Esperança/Medo e empates são interpretados pela aplicação; o motor só entrega dados, valores e etiquetas.
 - **Biblioteca primeiro.** O playground consome apenas a API pública.
 
+## Uso
+
+```ts
+import { DiceEngine } from '3dados';
+
+const engine = await DiceEngine.create(document.querySelector('#dice'));
+
+// Modo autônomo: o motor sorteia.
+const outcome = await engine.roll({ dice: [{ type: 'd6', count: 2 }] }).result;
+
+// Modo controlado: exibe os valores recebidos de fora.
+engine.roll({ dice: [{ type: 'd6', values: [6, 1] }] });
+```
+
+Detalhes em [docs/INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md).
+
 ## Requisitos
 
 - Node.js ≥ 22.12 e npm.
@@ -18,16 +34,17 @@ Motor de rolagem de dados 3D para Virtual Tabletops (VTT) de RPG: física convin
 
 ## Comandos
 
-| Comando                           | O que faz                                            |
-| --------------------------------- | ---------------------------------------------------- |
-| `npm install`                     | Instala as dependências.                             |
-| `npm run dev`                     | Abre o playground em `http://localhost:5173`.        |
-| `npm run typecheck`               | Checagem de tipos.                                   |
-| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier. |
-| `npm test`                        | Testes unitários e de integração (Vitest).           |
-| `npm run test:e2e`                | Testes no navegador (Playwright).                    |
-| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).           |
-| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).    |
+| Comando                           | O que faz                                                |
+| --------------------------------- | -------------------------------------------------------- |
+| `npm install`                     | Instala as dependências.                                 |
+| `npm run dev`                     | Abre o playground em `http://localhost:5173`.            |
+| `npm run typecheck`               | Checagem de tipos.                                       |
+| `npm run lint`                    | ESLint (inclui fronteiras entre módulos) e Prettier.     |
+| `npm test`                        | Testes unitários e de integração (Vitest).               |
+| `npm run test:e2e`                | Testes no navegador (Playwright).                        |
+| `npm run build`                   | Gera `dist/` (ESM + declarações de tipos).               |
+| `npm run bench`                   | Medições da pré-simulação (não faz parte de `npm test`). |
+| `npx playwright install chromium` | Baixa o navegador de teste (uma vez por máquina).        |
 
 ## Estrutura
 
@@ -52,6 +69,7 @@ assets/         assets de terceiros e seus créditos
 - [API](docs/API.md)
 - [Plano de desenvolvimento](docs/DEVELOPMENT_PLAN.md)
 - [Guia de integração](docs/INTEGRATION_GUIDE.md)
+- [Medições](docs/BENCHMARKS.md)
 - [Decisões de arquitetura (ADRs)](docs/adr/)
 - [Histórico de mudanças](CHANGELOG.md)
 

@@ -2,7 +2,14 @@
  * Dice Core — definições de dados, pedidos, resultados, validações, RNG e
  * eventos. Não depende de three, de Rapier nem de DOM.
  */
+export * from './dice/d6';
+export * from './die-definition';
 export * from './errors';
 export * from './events';
+export * from './face-reading';
+export * from './math';
 export * from './random';
+export * from './roll-plan';
+export * from './symmetry';
+export * from './trajectory';
 export * from './types';

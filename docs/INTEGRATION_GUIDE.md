@@ -1,6 +1,6 @@
 # Guia de integração
 
-> **Estado:** o motor de rolagem ainda não existe (Etapa 1 concluída). Este guia mostra o que já pode ser usado e como a integração está **prevista**. Os exemplos previstos serão validados por teste na Etapa 8.
+> **Estado:** o motor rola **d6** (Etapa 2). Os demais dados, temas, áudio, efeitos e o protocolo multiplayer ainda não existem. O que este guia marca como "previsto" não está implementado.
 
 ## Papéis
 
@@ -12,75 +12,99 @@
 
 O 3dados nunca altera um valor oficial. Se não conseguir exibi-lo, a rolagem termina com `status: 'failed'`.
 
-## Disponível hoje
+## Montagem
 
-### TypeScript
+O motor desenha em um canvas transparente dentro do elemento que você fornecer. Posicione esse elemento sobre o conteúdo da aplicação:
+
+```html
+<div id="mapa" style="position: relative">
+  <!-- conteúdo do VTT -->
+  <div id="dice" style="position: absolute; inset: 0"></div>
+</div>
+```
+
+O canvas não intercepta cliques, então o mapa por baixo continua interativo. O elemento precisa ter tamanho: com largura ou altura zero, nada é desenhado.
+
+## Exemplo mínimo em TypeScript
 
 ```ts
-import { VERSION, DiceError, isDiceError, createCryptoRandomSource } from '3dados';
-import type { RollRequest, RollOutcome } from '3dados';
+import { DiceEngine, type RollOutcome } from '3dados';
 
-const request: RollRequest = {
-  dice: [{ type: 'd20', count: 2, role: 'advantage' }],
-  metadata: { playerId: 'p1', roomId: 'mesa-1', visibility: 'public' },
-};
+const engine = await DiceEngine.create(document.querySelector<HTMLElement>('#dice')!);
 
-function describe(outcome: RollOutcome): string {
-  switch (outcome.status) {
-    case 'completed':
-      return `Total ${outcome.total}`;
-    case 'cancelled':
-      return `Cancelada (${outcome.reason})`;
-    case 'failed':
-      return `Falhou: ${outcome.error.code}`;
-  }
+// Modo autônomo: o motor sorteia.
+const outcome: RollOutcome = await engine.roll({ dice: [{ type: 'd6', count: 2 }] }).result;
+
+switch (outcome.status) {
+  case 'completed':
+    console.log(
+      outcome.dice.map((die) => die.value),
+      outcome.total,
+    );
+    break;
+  case 'cancelled':
+    console.log('cancelada:', outcome.reason);
+    break;
+  case 'failed':
+    console.error(outcome.error.code, outcome.error.message);
+    break;
 }
 ```
 
-### JavaScript
+## Exemplo mínimo em JavaScript
 
 ```js
-import { VERSION, isDiceError, createCryptoRandomSource } from '3dados';
-
-console.log(`3dados ${VERSION}`);
-
-const source = createCryptoRandomSource();
-console.log(source.nextUint32());
-```
-
-## Previsto
-
-### Rolagem autônoma
-
-```ts
 import { DiceEngine } from '3dados';
 
-const engine = await DiceEngine.create(document.querySelector('#dice')!);
+const engine = await DiceEngine.create(document.querySelector('#dice'));
 
-const outcome = await engine.roll({ dice: [{ type: 'd20' }, { type: 'd6', count: 2 }] }).result;
-if (outcome.status === 'completed') {
+engine.on('rollCompleted', ({ dice, total }) => {
   console.log(
-    outcome.dice.map((die) => die.value),
-    outcome.total,
+    dice.map((die) => die.value),
+    total,
   );
-}
+});
+
+document.querySelector('#rolar').addEventListener('click', () => {
+  engine.roll({ dice: [{ type: 'd6', count: 3 }] });
+});
 ```
 
-### Rolagem com resultado do servidor
+## Rolagem com resultado do servidor
+
+O servidor decide os valores; o motor os exibe.
 
 ```ts
 socket.on('roll', (message) => {
   engine.roll({
     id: message.rollId,
-    dice: message.dice, // cada item com `values` preenchido pelo servidor
+    dice: [{ type: 'd6', values: message.values, role: 'damage' }],
     metadata: { playerId: message.playerId, roomId: message.roomId },
   });
 });
 ```
 
-### Exemplos por sistema
+Cada cliente anima a própria trajetória. O que é igual para todos é o resultado, não o caminho dos dados.
 
-O motor não conhece nenhum sistema. Os exemplos mostram apenas como a aplicação descreve os dados.
+## Tratamento de falhas
+
+`roll()` nunca lança e `result` nunca rejeita. Trate os três desfechos:
+
+- `completed`: os valores em `dice` são os exibidos.
+- `cancelled`: `reason` diz por quê (`caller`, `superseded`, `cleared`, `destroyed`).
+- `failed`: `error.code` diz o que houve. Os dois casos que merecem tratamento próprio:
+  - `SIMULATION_FAILED`: dados demais para a área disponível. Reduza a quantidade, aumente o elemento ou diminua `diceSizePx`.
+  - `RESULT_MISMATCH`: o motor não conseguiu garantir o valor na tela e removeu os dados. Mostre o resultado oficial por outro meio.
+
+## Ciclo de vida
+
+- Uma rolagem por vez: uma nova rolagem cancela a anterior e limpa a mesa.
+- `engine.clear()` remove os dados que ficaram na mesa.
+- Chame `engine.destroy()` ao remover o elemento da página. Depois disso a instância não pode ser reutilizada.
+
+## Exemplos por sistema (previsto)
+
+O motor não conhece nenhum sistema. Os exemplos mostram apenas como a aplicação descreverá os dados quando os demais poliedros existirem.
 
 ```ts
 // D&D: vantagem. A aplicação escolhe o maior.
@@ -103,17 +127,12 @@ engine.roll({
 });
 ```
 
-### Áudio
+## Áudio (previsto)
 
-Navegadores só liberam áudio após um gesto do usuário. Chame `engine.audio.unlock()` dentro de um manipulador de clique ou tecla; antes disso as rolagens acontecem em silêncio, sem erro.
-
-### Ciclo de vida
-
-Chame `engine.destroy()` ao remover o elemento da página. Depois disso a instância não pode ser reutilizada.
+Navegadores só liberam áudio após um gesto do usuário. Será preciso chamar `engine.audio.unlock()` dentro de um manipulador de clique ou tecla.
 
 ## Empacotamento
 
 - A biblioteca é distribuída como ESM, com declarações de tipos.
-- `three` e `@dimforge/rapier3d-compat` são dependências resolvidas pelo bundler da aplicação, não embutidas.
-- Os sons não são embutidos no JavaScript: ficarão em arquivos separados, carregados de uma URL base configurável. Sem arquivos, o motor usa síntese procedural.
+- `three` e `@dimforge/rapier3d-deterministic-compat` são dependências resolvidas pelo bundler da aplicação, não embutidas. O Rapier (alguns MB) é carregado por `import()` dinâmico, só quando um motor é criado.
 - Depois que os recursos locais estão disponíveis, nenhuma conexão com a internet é necessária.

@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import packageJson from '../../package.json' with { type: 'json' };
 
 test.describe('playground', () => {
-  test('carrega e mostra a versão da biblioteca', async ({ page }) => {
+  test('carrega, mostra a versão e deixa o motor pronto', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
 
@@ -10,7 +10,8 @@ test.describe('playground', () => {
 
     await expect(page.getByRole('heading', { level: 1 })).toContainText('3dados');
     await expect(page.getByTestId('engine-version')).toHaveText(packageJson.version);
-    await expect(page.getByTestId('stage-empty')).toBeVisible();
+    await expect(page.getByTestId('roll-status')).toHaveText('pronto');
+    await expect(page.getByTestId('dice-overlay').locator('canvas')).toHaveCount(1);
     expect(errors).toEqual([]);
   });
 

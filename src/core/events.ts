@@ -11,6 +11,13 @@ import type {
 export interface RollStartedEvent {
   rollId: RollId;
   dice: readonly { dieId: DieId; type: DieType; role?: string }[];
+  /** Medições reais da pré-simulação desta rolagem. */
+  simulation: {
+    /** Tentativas feitas até obter uma trajetória válida. */
+    attempts: number;
+    /** Tempo de CPU gasto antes do primeiro quadro, em milissegundos. */
+    cpuTimeMs: number;
+  };
   metadata?: RollMetadata;
 }
 

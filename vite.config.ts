@@ -13,7 +13,7 @@ export default defineConfig({
     },
     rolldownOptions: {
       // Dependências de runtime não são embutidas: o bundler do consumidor as resolve e deduplica.
-      external: ['three', /^three\//, '@dimforge/rapier3d-compat'],
+      external: ['three', /^three\//, '@dimforge/rapier3d-deterministic-compat'],
     },
   },
 });

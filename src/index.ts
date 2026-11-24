@@ -17,6 +17,11 @@ export type {
   Unsubscribe,
 } from './core/events';
 
+export { DiceEngine } from './integration/engine';
+export type { DiceEngineOptions, RollHandle } from './integration/engine';
+
+export type { PhysicsConfig } from './physics/config';
+
 export { createCryptoRandomSource, createSeededRandomSource } from './core/random';
 export type { RandomSource } from './core/random';
 

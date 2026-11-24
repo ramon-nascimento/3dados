@@ -1,8 +1,8 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d-deterministic-compat';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-// Valida a premissa da Etapa 1: o Rapier (-compat) inicializa e simula em Node,
-// sem navegador. A camada `physics` real chega na Etapa 2.
+// Valida a premissa de que o Rapier (-compat) inicializa e simula em Node,
+// sem navegador, independentemente da camada `physics`.
 describe('Rapier em Node', () => {
   beforeAll(async () => {
     await RAPIER.init();

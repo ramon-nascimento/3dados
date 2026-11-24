@@ -44,8 +44,8 @@ describe('fronteiras entre módulos', () => {
 
   it.each([
     { module: 'core', specifier: 'three', allowed: false },
-    { module: 'core', specifier: '@dimforge/rapier3d-compat', allowed: false },
-    { module: 'physics', specifier: '@dimforge/rapier3d-compat', allowed: true },
+    { module: 'core', specifier: '@dimforge/rapier3d-deterministic-compat', allowed: false },
+    { module: 'physics', specifier: '@dimforge/rapier3d-deterministic-compat', allowed: true },
     { module: 'physics', specifier: 'three', allowed: false },
     { module: 'physics', specifier: 'three/addons/math/ConvexHull.js', allowed: false },
     { module: 'renderer', specifier: 'three', allowed: true },
@@ -55,12 +55,12 @@ describe('fronteiras entre módulos', () => {
       allowed: true,
     },
     { module: 'renderer', specifier: 'three/addons/effects/OutlineEffect.js', allowed: true },
-    { module: 'renderer', specifier: '@dimforge/rapier3d-compat', allowed: false },
+    { module: 'renderer', specifier: '@dimforge/rapier3d-deterministic-compat', allowed: false },
     { module: 'effects', specifier: 'three', allowed: true },
     { module: 'audio', specifier: 'three', allowed: false },
     { module: 'customization', specifier: 'three', allowed: false },
     { module: 'integration', specifier: 'three', allowed: false },
-    { module: 'integration', specifier: '@dimforge/rapier3d-compat', allowed: false },
+    { module: 'integration', specifier: '@dimforge/rapier3d-deterministic-compat', allowed: false },
   ])('$module importando "$specifier": permitido = $allowed', async (testCase) => {
     const found = await violations(
       `src/${testCase.module}/probe.ts`,

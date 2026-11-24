@@ -55,8 +55,9 @@ O valor de cada dado é sempre conhecido **antes** de a animação começar ([AD
 - Se nenhuma semente convergir, a melhor tentativa recebe um tombamento final curto até a face plana mais próxima e o resultado é marcado com `recovered: true`.
 - A orientação inicial do dado é consequência do valor-alvo.
 - Espectadores diferentes não veem necessariamente a mesma trajetória; veem sempre o mesmo resultado.
-- A pré-simulação consome CPU antes do primeiro quadro. O custo será medido na Etapa 2; a interface de física é assíncrona para permitir Web Worker sem mudar contratos.
-- Dados de rolagens anteriores que permanecem na mesa nunca são corpos dinâmicos em uma nova simulação, para não mudarem de face.
+- A pré-simulação consome CPU antes do primeiro quadro: de 2 a 12 ms para 1 a 20 dados na máquina de referência, e cerca de 95 ms na primeira rolagem da página. A interface de física é assíncrona para permitir Web Worker sem mudar contratos.
+- Dados de rolagens anteriores que permanecem na mesa nunca são corpos dinâmicos em uma nova simulação, para não mudarem de face. Hoje eles são removidos quando uma nova rolagem começa.
+- A capacidade depende da área: rolagens densas não convergem e falham explicitamente até existir a recuperação da Etapa 4 (números em [BENCHMARKS.md](BENCHMARKS.md)).
 
 ## Multiplayer
 
@@ -69,7 +70,7 @@ Versões e justificativas em [ADR 0005](adr/0005-stack-tecnica.md).
 | Papel  | Escolha                                                  |
 | ------ | -------------------------------------------------------- |
 | Render | Three.js (`WebGLRenderer`, WebGL 2), versão exata fixada |
-| Física | Rapier 3D (`@dimforge/rapier3d-compat`)                  |
+| Física | Rapier 3D (`@dimforge/rapier3d-deterministic-compat`)    |
 | Áudio  | Web Audio API nativa                                     |
 | Build  | Vite em modo biblioteca, declarações por `tsc`           |
 | Testes | Vitest (unidade, integração) e Playwright (e2e, visual)  |

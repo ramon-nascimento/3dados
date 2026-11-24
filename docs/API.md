@@ -4,27 +4,62 @@ A API é `0.x`: pode mudar entre versões menores até a Etapa 8. O único ponto
 
 Este documento separa o que **já existe** do que está **proposto**. Nada marcado como proposto está implementado.
 
-## Disponível hoje (0.1.0)
+## Disponível hoje (0.2.0)
 
-### `VERSION`
+Só o **d6** está implementado. Os demais dados chegam na Etapa 3.
+
+### Motor
 
 ```ts
-import { VERSION } from '3dados'; // '0.1.0'
+import { DiceEngine, createCryptoRandomSource } from '3dados';
+
+const engine = await DiceEngine.create(container, {
+  diceSizePx: 72, // tamanho aproximado de um dado na tela, em px CSS
+  maxPixelRatio: 2, // teto de densidade de pixels do canvas
+  physics: {}, // Partial<PhysicsConfig>
+  rng: createCryptoRandomSource(), // fonte dos valores no modo autônomo
+});
 ```
 
-### Contratos de rolagem (tipos)
+`create` insere em `container` um canvas transparente que ocupa 100% dele e não intercepta cliques (`pointer-events: none`). O tamanho e a posição são os do `container`; o motor acompanha redimensionamentos. Rejeita com `DiceError` `UNSUPPORTED_ENVIRONMENT` se não houver WebGL.
+
+| Método                      | Efeito                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------- |
+| `roll(request): RollHandle` | Inicia uma rolagem. Nunca lança.                                                              |
+| `cancel(rollId?): boolean`  | Cancela a rolagem em andamento (com `rollId`, só se for essa). Devolve se algo foi cancelado. |
+| `clear(): void`             | Cancela a rolagem em andamento e remove os dados da mesa.                                     |
+| `on(evento, ouvinte)`       | Registra um ouvinte; devolve a função que o remove.                                           |
+| `destroy(): void`           | Cancela, libera GPU e remove o canvas. A instância não pode ser reutilizada.                  |
+
+```ts
+interface RollHandle {
+  readonly id: string;
+  readonly result: Promise<RollOutcome>; // nunca rejeita
+  cancel(): void; // sem efeito se a rolagem já terminou
+}
+```
+
+Comportamento:
+
+- **Uma rolagem por vez.** Uma nova rolagem cancela a anterior (motivo `superseded`) e remove os dados que estavam na mesa. Fila ou sobreposição é decisão da Etapa 8.
+- Os dados de uma rolagem concluída ficam na mesa até a próxima rolagem ou `clear()`.
+- Um pedido inválido resolve com `status: 'failed'` e não interfere na rolagem em andamento.
+- Depois de `destroy()`, `roll` resolve com `ENGINE_DESTROYED`.
+- Uma rolagem só é concluída depois de o motor ler, na cena, a face que cada dado exibe. Se divergir do valor oficial, o desfecho é `failed` com `RESULT_MISMATCH` e os dados são removidos da tela.
+
+### Pedido de rolagem
 
 ```ts
 type StandardDieType = 'd4' | 'd6' | 'd8' | 'd10' | 'd12' | 'd20' | 'd100';
-type DieType = StandardDieType | string; // string: dado personalizado registrado
+type DieType = StandardDieType | string;
 
 interface DieSpec {
   type: DieType;
-  count?: number; // padrão 1
+  count?: number; // padrão: tamanho de `values`, ou de `ids`, ou 1
   values?: readonly number[]; // modo controlado: um valor por dado
-  ids?: readonly string[]; // gerados quando omitidos
+  ids?: readonly string[]; // gerados como `<rollId>:<índice>` quando omitidos
   role?: string; // etiqueta livre, devolvida nos resultados
-  theme?: string; // id de tema registrado
+  theme?: string; // reservado; sem efeito até a Etapa 5
 }
 
 interface RollRequest {
@@ -37,16 +72,20 @@ interface RollRequest {
 interface RollMetadata {
   playerId?: string;
   roomId?: string;
-  visibility?: 'public' | 'private' | 'blind';
+  visibility?: 'public' | 'private' | 'blind'; // ainda sem efeito no motor
   [key: string]: unknown;
 }
 ```
 
-Regras do contrato:
+Regras:
 
-- Em um `DieSpec`, ou todos os dados têm valor em `values`, ou nenhum.
-- `seed` nunca influencia valores, apenas a trajetória.
+- Sem `values`, o motor sorteia cada dado com o RNG (modo autônomo). Com `values`, exibe exatamente esses valores (modo controlado).
+- Em um `DieSpec`, ou todos os dados têm valor, ou nenhum.
+- `seed` nunca influencia valores. Na mesma máquina, a mesma semente reproduz a mesma animação.
 - `metadata` é devolvido sem alteração nos eventos e no desfecho.
+- No máximo 30 dados por rolagem. A capacidade real depende da área: ver [BENCHMARKS.md](BENCHMARKS.md).
+
+### Desfecho
 
 ```ts
 type RollOutcome = RollCompleted | RollCancelled | RollFailed;
@@ -56,7 +95,7 @@ interface RollCompleted {
   rollId: string;
   dice: readonly DieResult[];
   total: number; // soma dos valores; interpretação é da aplicação
-  durationMs: number;
+  durationMs: number; // do pedido até a conclusão
   metadata?: RollMetadata;
 }
 
@@ -81,24 +120,25 @@ interface DieResult {
   faceId: string;
   role?: string;
   source: 'predetermined' | 'rng';
-  recovered: boolean; // true se houve tombamento corretivo
+  recovered: boolean; // sempre false até a Etapa 4
 }
 ```
 
-Cancelamento e falha são desfechos esperados: chegam como valor, não como exceção.
+### Eventos
 
-### Eventos (tipos)
+| Evento          | Payload                                                             | Quando                                             |
+| --------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
+| `rollStarted`   | `{ rollId, dice: [{ dieId, type, role? }], simulation, metadata? }` | A animação começa.                                 |
+| `diceCollided`  | `{ rollId, dieId, other, intensity, timeMs }`                       | Um dado começa a tocar outro dado ou a superfície. |
+| `diceSettled`   | `{ rollId, dieId, value, faceId }`                                  | Um dado para.                                      |
+| `rollCompleted` | `RollCompleted`                                                     | Todos pararam e os valores foram verificados.      |
+| `rollCancelled` | `RollCancelled`                                                     | A rolagem foi cancelada.                           |
+| `rollFailed`    | `RollFailed`                                                        | A rolagem falhou, inclusive por pedido inválido.   |
 
-| Evento          | Payload                                                 | Quando                                             |
-| --------------- | ------------------------------------------------------- | -------------------------------------------------- |
-| `rollStarted`   | `{ rollId, dice: [{ dieId, type, role? }], metadata? }` | A animação da rolagem começa.                      |
-| `diceCollided`  | `{ rollId, dieId, other, intensity, timeMs }`           | Um dado colide com outro dado ou com a superfície. |
-| `diceSettled`   | `{ rollId, dieId, value, faceId }`                      | Um dado para.                                      |
-| `rollCompleted` | `RollCompleted`                                         | Todos pararam e os valores foram verificados.      |
-| `rollCancelled` | `RollCancelled`                                         | A rolagem foi cancelada.                           |
-| `rollFailed`    | `RollFailed`                                            | A rolagem falhou, inclusive por divergência.       |
-
-`other` é `{ kind: 'die', dieId }` ou `{ kind: 'surface' }`. `intensity` vai de 0 a 1.
+- `simulation` é `{ attempts, cpuTimeMs }`: medições reais da pré-simulação daquela rolagem.
+- `other` é `{ kind: 'die', dieId }` ou `{ kind: 'surface' }` (mesa e paredes).
+- `intensity` vai de 0 a 1: variação de velocidade causada pelo impacto, relativa à velocidade de lançamento. Contatos contínuos de um dado rolando não geram eventos; isso será refinado com o áudio, na Etapa 6.
+- Uma exceção lançada por um ouvinte é registrada no console e não interrompe o motor.
 
 ### Erros
 
@@ -117,6 +157,28 @@ import { DiceError, isDiceError } from '3dados';
 | `RESULT_MISMATCH`         | O valor exibido divergiu do oficial.                  |
 | `UNSUPPORTED_ENVIRONMENT` | Recurso de plataforma indisponível.                   |
 | `ENGINE_DESTROYED`        | A instância já foi destruída.                         |
+| `INTERNAL_ERROR`          | Falha inesperada; `cause` traz o erro original.       |
+
+### Física
+
+```ts
+interface PhysicsConfig {
+  gravity: number; // unidades/s² (1 unidade = aresta de um d6). Padrão 150
+  timestep: number; // s. Padrão 1/120
+  maxDuration: number; // s simulados por tentativa. Padrão 8
+  friction: number; // dados. Padrão 0,3
+  restitution: number; // dados. Padrão 0,45
+  surfaceFriction: number; // mesa e paredes. Padrão 0,35
+  surfaceRestitution: number; // mesa e paredes. Padrão 0,4
+  throwSpeed: number; // unidades/s. Padrão 35
+  throwSpin: number; // rad/s. Padrão 25
+  linearDamping: number; // Padrão 0,02
+  angularDamping: number; // Padrão 0,02
+  maxAttempts: number; // sementes tentadas antes de falhar. Padrão 12
+}
+```
+
+Os padrões foram calibrados por medição; ver [BENCHMARKS.md](BENCHMARKS.md).
 
 ### Fontes de aleatoriedade
 
@@ -131,26 +193,23 @@ interface RandomSource {
 - `createCryptoRandomSource()` usa `crypto.getRandomValues`. É a fonte padrão dos valores no modo autônomo.
 - `createSeededRandomSource(seed)` é determinística (mulberry32). Serve para trajetórias e testes; **não** use como fonte de valores oficiais.
 
-## Proposto (ainda não implementado)
+### `VERSION`
 
-### Motor
+```ts
+import { VERSION } from '3dados'; // '0.2.0'
+```
+
+## Proposto (ainda não implementado)
 
 ```ts
 const engine = await DiceEngine.create(container, {
   presentation: 'overlay', // | 'tray'
   quality: 'auto', // | 'low' | 'medium' | 'high'
-  maxPixelRatio: 2,
   theme: defaultTheme,
   audio: { enabled: true, volume: 0.8 },
   effects: { level: 'full' }, // | 'reduced' | 'off'
-  physics: {}, // gravidade, atrito, restituição, força do lançamento, tempo máximo
-  rng: createCryptoRandomSource(),
 });
 
-const handle = engine.roll(request); // { id, result: Promise<RollOutcome>, cancel() }
-
-engine.cancel(rollId);
-engine.clear();
 engine.registerDie(definition);
 engine.registerTheme(theme);
 engine.setDefaultTheme(id);
@@ -162,19 +221,16 @@ engine.effects.setLevel('reduced');
 engine.remote.receive(envelope);
 engine.getState();
 engine.getStats();
-const off = engine.on('rollCompleted', (event) => {});
-engine.destroy();
 ```
 
-| Funcionalidade                                            | Etapa |
-| --------------------------------------------------------- | ----- |
-| `create`, `roll`, `cancel`, `clear`, `on`, `destroy` (d6) | 2     |
-| Demais dados e `registerDie`                              | 3     |
-| `values` (modo controlado)                                | 4     |
-| Temas                                                     | 5     |
-| `audio`                                                   | 6     |
-| `effects`                                                 | 7     |
-| `remote`, `getState`, `getStats`                          | 8     |
+| Funcionalidade                                         | Etapa |
+| ------------------------------------------------------ | ----- |
+| d4, d8, d10, d12, d20, d100 e `registerDie`            | 3     |
+| Dados sem simetria, recuperação (`recovered`)          | 4     |
+| Temas, `presentation`, `quality`                       | 5     |
+| `audio`                                                | 6     |
+| `effects`                                              | 7     |
+| `remote`, `getState`, `getStats`, rolagens simultâneas | 8     |
 
 ### Convenções de dados
 

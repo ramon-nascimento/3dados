@@ -18,6 +18,15 @@ export default defineConfig({
           testTimeout: 30_000,
         },
       },
+      {
+        // Medições; fora do `npm test`. Rodar com `npm run bench`.
+        test: {
+          name: 'bench',
+          environment: 'node',
+          include: ['tests/bench/**/*.test.ts'],
+          testTimeout: 600_000,
+        },
+      },
     ],
   },
 });

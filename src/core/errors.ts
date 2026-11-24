@@ -13,7 +13,9 @@ export type DiceErrorCode =
   /** Recurso de plataforma indisponível (WebGL, crypto, áudio). */
   | 'UNSUPPORTED_ENVIRONMENT'
   /** A instância do motor já foi destruída. */
-  | 'ENGINE_DESTROYED';
+  | 'ENGINE_DESTROYED'
+  /** Falha inesperada dentro do motor; `cause` traz o erro original. */
+  | 'INTERNAL_ERROR';
 
 export interface DiceErrorOptions {
   /** Erro original, quando houver. */

@@ -1,6 +1,6 @@
 {
   "name": "3dados",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Motor de rolagem de dados 3D para Virtual Tabletops (VTT), independente de framework.",
   "license": "MIT",
   "author": "Ramon Nascimento",
@@ -27,13 +27,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project integration",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "bench": "vitest run --project bench"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "0.21.0",
+    "@dimforge/rapier3d-deterministic-compat": "0.21.0",
     "three": "0.187.0"
   },
   "devDependencies": {

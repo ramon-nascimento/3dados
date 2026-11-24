@@ -1,24 +1,24 @@
 # ADR 0005 — Stack técnica
 
-- **Estado:** aceita (2026-11-23)
+- **Estado:** aceita (2026-11-23); pacote do Rapier atualizado pelo [ADR 0006](0006-rapier-deterministico.md)
 
 Versões verificadas no registro npm e na documentação oficial em 2026-11-23.
 
-| Papel     | Escolha                              | Versão                   | Licença          |
-| --------- | ------------------------------------ | ------------------------ | ---------------- |
-| Linguagem | TypeScript                           | 6.0.3                    | Apache-2.0       |
-| Render    | three (`WebGLRenderer`)              | 0.187.0                  | MIT              |
-| Física    | @dimforge/rapier3d-compat            | 0.21.0                   | Apache-2.0       |
-| Áudio     | Web Audio API                        | nativa                   | —                |
-| Build     | Vite (modo biblioteca)               | 8.3.8                    | MIT              |
-| Testes    | Vitest / Playwright                  | 5.1.1 / 1.65.1           | MIT / Apache-2.0 |
-| Qualidade | ESLint + typescript-eslint, Prettier | 10.15.0 + 8.74.0, 3.10.1 | MIT              |
+| Papel     | Escolha                                 | Versão                   | Licença          |
+| --------- | --------------------------------------- | ------------------------ | ---------------- |
+| Linguagem | TypeScript                              | 6.0.3                    | Apache-2.0       |
+| Render    | three (`WebGLRenderer`)                 | 0.187.0                  | MIT              |
+| Física    | @dimforge/rapier3d-deterministic-compat | 0.21.0                   | Apache-2.0       |
+| Áudio     | Web Audio API                           | nativa                   | —                |
+| Build     | Vite (modo biblioteca)                  | 8.3.8                    | MIT              |
+| Testes    | Vitest / Playwright                     | 5.1.1 / 1.65.1           | MIT / Apache-2.0 |
+| Qualidade | ESLint + typescript-eslint, Prettier    | 10.15.0 + 8.74.0, 3.10.1 | MIT              |
 
 ## Justificativas
 
 **Three.js com `WebGLRenderer`.** O manual oficial ainda descreve o `WebGPURenderer` como experimental, sem suporte a `ShaderMaterial` e `EffectComposer`. O renderer WebGL 2 segue mantido e recomendado. Three.js não segue versionamento semântico, então a versão é fixada sem `^` e o uso fica confinado a `renderer` e `effects`. Os poliedros nativos não servem (sem grupos por face, UV esférico, sem d10): a geometria é própria.
 
-**Rapier `-compat`.** Ativo, com API de casco convexo, eventos de colisão e de força de contato. O pacote `-compat` embute o WASM e funciona em Node, o que permite testar a física sem navegador (validado em `tests/integration/rapier.test.ts`). O JavaScript tem cerca de 4,3 MB antes de compressão, por isso será carregado por `import()` dinâmico. Só o build `-deterministic` garante determinismo entre plataformas; o design não depende disso (ADR 0003), e a troca de build é uma decisão da Etapa 2.
+**Rapier `-deterministic-compat`.** Ativo, com API de casco convexo, eventos de colisão e de força de contato. O pacote `-compat` embute o WASM e funciona em Node, o que permite testar a física sem navegador (validado em `tests/integration/rapier.test.ts`). O JavaScript tem cerca de 4,3 MB antes de compressão, por isso será carregado por `import()` dinâmico. Só o build `-deterministic` garante determinismo entre plataformas; o design não depende disso (ADR 0003), mas o custo medido foi desprezível e ele foi adotado (ADR 0006).
 
 **Web Audio em vez de Howler.** O Howler não tem release desde 2023 e o que ele oferece é coberto por `AudioBufferSourceNode`, `playbackRate`/`detune` e `DynamicsCompressorNode`. Amostras em MP3 ou WAV, pois Vorbis e Opus não são confiáveis no Safari.
 

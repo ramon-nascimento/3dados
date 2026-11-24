@@ -5,8 +5,8 @@ O desenvolvimento é dividido em nove etapas. **Cada etapa termina com uma parad
 | Etapa | Tema                   | Estado               |
 | ----- | ---------------------- | -------------------- |
 | 1     | Fundação               | ✅ Concluída         |
-| 2     | Primeiro d6 funcional  | Aguardando aprovação |
-| 3     | Dados poliédricos      | —                    |
+| 2     | Primeiro d6 funcional  | ✅ Concluída         |
+| 3     | Dados poliédricos      | Aguardando aprovação |
 | 4     | Resultados controlados | —                    |
 | 5     | Materiais e temas      | —                    |
 | 6     | Sonorização            | —                    |
@@ -32,21 +32,33 @@ Observações registradas nesta etapa:
 - **Playwright:** nesta máquina o Chrome completo do Playwright (`channel: 'chromium'`, build 1255) não inicia: o Windows reporta erro de configuração lado a lado. O headless shell padrão funciona e oferece WebGL 2 por SwiftShader, e é o que os testes usam. `PLAYWRIGHT_CHANNEL=chromium` troca o canal quando necessário.
 - **TypeScript 6.0.3** em vez do 7: o `typescript-eslint` 8.74 ainda exige `<6.1`.
 
-## Etapa 2 — Primeiro d6 funcional
+## Etapa 2 — Primeiro d6 funcional ✅
 
 Geometria do d6, pré-simulação com gravação, reprodução na tela, leitura de face e o primeiro corte da fachada `DiceEngine` (`create`, `roll`, `cancel`, `clear`, `on`, `destroy`).
 
-Critérios de aceite:
+| Critério de aceite                                                   | Evidência                                                                                                                        |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1.000 pré-simulações sem resultado ambíguo aceito                    | `tests/integration/presimulation.test.ts`: 1.000 simulações, 3.496 dados, todos assentados (alinhamento ≥ 0,999) e sobre a mesa. |
+| O valor lido corresponde à face para cima em 100% dos casos          | Mesmo teste, com verificação geométrica independente: os vértices da face lida são os quatro mais altos.                         |
+| Rolagem visível no playground, em overlay transparente               | `tests/e2e/roll.spec.ts` (5 testes) e inspeção visual no navegador: os números desenhados correspondem aos valores pedidos.      |
+| Tempo de pré-simulação medido e registrado com o hardware            | [BENCHMARKS.md](BENCHMARKS.md).                                                                                                  |
+| Custo do build determinístico do Rapier medido e decisão documentada | [ADR 0006](adr/0006-rapier-deterministico.md): 0% a 5% mais lento; adotado.                                                      |
 
-- 1.000 pré-simulações sem nenhum resultado ambíguo aceito.
-- O valor lido corresponde à face para cima em 100% dos casos.
-- Rolagem visível no playground, em overlay transparente.
-- Tempo de pré-simulação medido e registrado junto com o hardware usado.
-- Custo do build `-deterministic-compat` do Rapier medido, com decisão documentada.
+Mudanças de escopo em relação ao plano:
+
+- **Reorientação por simetria antecipada para o d6.** O ADR 0002 exige que o valor seja decidido antes da animação também no modo autônomo, e isso só é possível com a reorientação. Ela foi implementada de forma genérica (o grupo de simetria é calculado a partir da geometria) e validada para o d6: as 36 combinações de valor pedido e face em que o dado caiu, e a falha quando a malha diverge. Como o caminho é o mesmo, `values` já funciona para o d6.
+- **Chanfro das arestas adiado.** Os dados têm arestas vivas. O chanfro genérico para poliedros convexos entra junto com os demais dados (Etapa 3).
+
+Descobertas desta etapa:
+
+- **A capacidade depende da área.** Rolagens densas não convergem (os dados param uns sobre os outros) e falham com `SIMULATION_FAILED`. O teto foi fixado em 30 dados por rolagem, o maior valor que convergiu na área de referência; números em [BENCHMARKS.md](BENCHMARKS.md).
+- **Dois defeitos de lançamento corrigidos por medição:** dados podiam nascer sobrepostos perto das paredes (pego por teste), e muitos dados caíam empilhados.
+- **A primeira rolagem da página é mais lenta** (95 ms contra ~5 ms), pelo aquecimento do WASM.
+- **Eventos de colisão são só de início de contato.** O rolar contínuo de um dado não gera eventos; será refinado com o áudio (Etapa 6).
 
 ## Etapa 3 — Dados poliédricos
 
-d4, d8, d10, d12, d20, d100 e dados personalizados.
+d4, d8, d10, d12, d20, d100 e dados personalizados; chanfro das arestas.
 
 Critérios de aceite:
 
@@ -58,13 +70,14 @@ Critérios de aceite:
 
 ## Etapa 4 — Resultados controlados
 
-Reorientação por simetria, busca por condições iniciais para dados assimétricos e recuperação.
+A reorientação por simetria já existe desde a Etapa 2 (validada para o d6). Restam: validação para todos os dados, busca por condições iniciais para dados assimétricos e recuperação quando a simulação não converge.
 
 Critérios de aceite:
 
 - Para cada dado e cada valor, o valor exibido é o pedido (teste exaustivo).
 - Teste no navegador lendo a orientação real da malha.
-- Divergência forçada gera `rollFailed`, nunca `rollCompleted`.
+- Divergência forçada gera `rollFailed`, nunca `rollCompleted` (já coberto para o d6).
+- Recuperação: rolagens densas que hoje falham passam a concluir com `recovered: true`; capacidade medida de novo.
 - Limitações documentadas.
 
 ## Etapa 5 — Materiais e temas
@@ -126,8 +139,10 @@ Critérios de aceite:
 
 | Decisão                                            | Etapa |
 | -------------------------------------------------- | ----- |
-| Build comum ou `-deterministic` do Rapier          | 2     |
-| Pré-simulação na thread principal ou em Web Worker | 2     |
 | Valor da face `0` do d10 rolado sozinho (0 ou 10)  | 3     |
 | Rolagens simultâneas: fila ou sobreposição         | 8     |
 | Semântica final de `visibility` (`blind` e afins)  | 8     |
+| Trajetórias iguais entre clientes por semente      | 8     |
+| Pré-simulação na thread principal ou em Web Worker | 9     |
+
+Decididas: build determinístico do Rapier ([ADR 0006](adr/0006-rapier-deterministico.md)). A pré-simulação segue na thread principal; pelos números da Etapa 2 um Worker não se justifica, e a decisão será revista com medições em hardware mais fraco.
