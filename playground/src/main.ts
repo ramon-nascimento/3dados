@@ -9,6 +9,7 @@ import {
   type RollOutcome,
   type RollRequest,
 } from '3dados';
+import { createAudioPanel } from './audio-panel';
 import { createThemePanel, type ThemePanel } from './theme-panel';
 
 interface Diagnostic {
@@ -271,7 +272,15 @@ async function start(): Promise<void> {
 
   let engine: DiceEngine;
   try {
-    engine = await DiceEngine.create(byTestId('dice-overlay'), engineOptions);
+    engine = await DiceEngine.create(byTestId('dice-overlay'), {
+      ...engineOptions,
+      // assets/ é a pasta pública do playground (playground/vite.config.ts).
+      // `?audio=off` cria o motor com o áudio desligado (usado nos testes).
+      audio: {
+        baseUrl: '/sounds/',
+        enabled: new URLSearchParams(location.search).get('audio') !== 'off',
+      },
+    });
     engine.registerDie(createFudgeDie());
     engine.registerDie(createBrickDie());
   } catch (error) {
@@ -287,6 +296,7 @@ async function start(): Promise<void> {
     if (themes.panel) renderRollThemes(themes.panel);
   });
   renderRollThemes(themes.panel);
+  createAudioPanel(engine);
   setStatus('pronto');
 
   // Acesso para depuração e para os testes de navegador, que leem a orientação

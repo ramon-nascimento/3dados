@@ -1,6 +1,7 @@
 import {
   MATERIAL_PRESETS,
   MATERIALS,
+  SOUND_PROFILES,
   TEXTURES,
   isDiceError,
   parseTheme,
@@ -89,6 +90,7 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
   const numbers = byTestId<HTMLInputElement>('theme-numbers');
   const font = byTestId<HTMLSelectElement>('theme-font');
   const texture = byTestId<HTMLSelectElement>('theme-texture');
+  const soundProfile = byTestId<HTMLSelectElement>('theme-sound-profile');
   const emissiveOn = byTestId<HTMLInputElement>('theme-emissive-on');
   const emissiveColor = byTestId<HTMLInputElement>('theme-emissive-color');
   const emissiveIntensity = byTestId<HTMLInputElement>('theme-emissive-intensity');
@@ -99,6 +101,11 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
   const numericRows = byTestId('theme-numeric');
 
   material.append(...MATERIALS.map((m) => option(m, MATERIAL_LABELS[m])));
+  // Os perfis sonoros têm os mesmos nomes dos materiais.
+  soundProfile.append(
+    option('', 'Do material'),
+    ...SOUND_PROFILES.map((profile) => option(profile, MATERIAL_LABELS[profile])),
+  );
   font.append(...FONTS.map(({ value, label }) => option(value, label)));
   texture.append(
     option('', 'Padrão do material'),
@@ -134,7 +141,7 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
 
   const catalog = new Map<string, CatalogEntry>();
   /** Campos que o formulário não edita (reservados), preservados ao salvar. */
-  let reserved: Pick<ThemeConfig, 'effects' | 'soundProfile'> = {};
+  let reserved: Pick<ThemeConfig, 'effects'> = {};
 
   function setStatus(text: string, state?: 'ok' | 'bad'): void {
     status.textContent = text;
@@ -187,10 +194,13 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
     emissiveColor.value = theme.emissive?.color ?? '#ffffff';
     emissiveIntensity.value = String(theme.emissive?.intensity ?? 1);
     emissiveTarget.value = theme.emissive?.target ?? 'numbers';
-    reserved = {
-      ...(theme.effects ? { effects: [...theme.effects] } : {}),
-      ...(theme.soundProfile ? { soundProfile: theme.soundProfile } : {}),
-    };
+    // Um perfil que o motor não conhece é preservado e aparece marcado.
+    const profile = theme.soundProfile ?? '';
+    if (![...soundProfile.options].some((element) => element.value === profile)) {
+      soundProfile.append(option(profile, `${profile} (desconhecido)`));
+    }
+    soundProfile.value = profile;
+    reserved = theme.effects ? { effects: [...theme.effects] } : {};
     syncNumeric(theme);
     json.value = serializeTheme(theme);
   }
@@ -206,6 +216,7 @@ export function createThemePanel(engine: DiceEngine, onCatalogChange: () => void
     };
     if (font.value) theme.font = font.value;
     if (texture.value) theme.texture = texture.value as TextureKind;
+    if (soundProfile.value) theme.soundProfile = soundProfile.value;
     for (const field of NUMERIC_FIELDS) {
       const row = numeric.get(field.key)!;
       if (row.custom.checked) theme[field.key] = Number(row.range.value);

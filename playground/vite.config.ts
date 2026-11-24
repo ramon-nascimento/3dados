@@ -5,6 +5,9 @@ import { defineConfig } from 'vite';
 // apontado para o código-fonte para recarregar durante o desenvolvimento.
 export default defineConfig({
   root: import.meta.dirname,
+  // Os sons do pacote (assets/sounds) são servidos em /sounds/, como uma
+  // aplicação faria ao copiar a pasta para o seu servidor.
+  publicDir: resolve(import.meta.dirname, '../assets'),
   resolve: {
     alias: {
       '3dados': resolve(import.meta.dirname, '../src/index.ts'),

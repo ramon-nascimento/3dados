@@ -71,10 +71,16 @@
                 <input data-testid="theme-name" autocomplete="off" />
               </label>
             </div>
-            <label>
-              Material
-              <select data-testid="theme-material"></select>
-            </label>
+            <div class="pair">
+              <label>
+                Material
+                <select data-testid="theme-material"></select>
+              </label>
+              <label>
+                Perfil sonoro
+                <select data-testid="theme-sound-profile"></select>
+              </label>
+            </div>
             <div class="colors">
               <label>
                 Principal
@@ -150,6 +156,64 @@
               </label>
             </div>
             <p class="hint" data-testid="theme-status" aria-live="polite"></p>
+          </form>
+        </section>
+
+        <section class="panel" aria-labelledby="audio-title">
+          <h2 id="audio-title">Áudio</h2>
+          <form class="form" data-testid="audio-form">
+            <div class="pair">
+              <label class="inline">
+                <input type="checkbox" data-testid="audio-enabled" />
+                Som ligado
+              </label>
+              <label>
+                Volume
+                <input type="range" min="0" max="1" step="0.05" data-testid="audio-volume" />
+              </label>
+            </div>
+            <div class="pair">
+              <label>
+                Superfície
+                <select data-testid="audio-surface">
+                  <option value="wood">Mesa de madeira</option>
+                  <option value="felt">Feltro</option>
+                </select>
+              </label>
+              <label>
+                Perfil para testar
+                <select data-testid="audio-profile"></select>
+              </label>
+            </div>
+            <div class="buttons">
+              <button type="button" data-testid="audio-impact" data-intensity="0.12">Fraco</button>
+              <button type="button" data-testid="audio-impact" data-intensity="0.4">Médio</button>
+              <button type="button" data-testid="audio-impact" data-intensity="1">Forte</button>
+              <button type="button" data-testid="audio-impact-die" data-intensity="0.4">
+                Dado contra dado
+              </button>
+            </div>
+            <div class="buttons">
+              <button type="button" data-testid="audio-play" data-sound="bell">Som: sino</button>
+              <button type="button" data-testid="audio-play" data-sound="thud">Som: baque</button>
+            </div>
+            <dl class="readout">
+              <dt>Estado</dt>
+              <dd data-testid="audio-state">—</dd>
+              <dt>Origem dos sons</dt>
+              <dd data-testid="audio-source">—</dd>
+              <dt>Vozes tocando</dt>
+              <dd data-testid="audio-voices">—</dd>
+              <dt>Agendados</dt>
+              <dd data-testid="audio-scheduled">—</dd>
+              <dt>Descartados · interrompidos</dt>
+              <dd data-testid="audio-limited">—</dd>
+            </dl>
+            <p class="hint">
+              O navegador só libera som depois de um clique na página. A superfície padrão é madeira
+              no overlay e feltro na bandeja. Os sons especiais tocam quando a aplicação pede; o
+              motor não decide o que é um crítico. Sons: Kenney (CC0).
+            </p>
           </form>
         </section>
 

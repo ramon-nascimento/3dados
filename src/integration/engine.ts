@@ -1,3 +1,13 @@
+import {
+  DiceAudio,
+  browserAudioEnvironment,
+  isSoundProfile,
+  parseAudioOptions,
+  planRollSounds,
+  type AudioOptions,
+  type DiceAudioControls,
+  type SoundProfile,
+} from '../audio';
 import { D6 } from '../core/dice/d6';
 import { D20 } from '../core/dice/platonic';
 import { createStandardRegistry } from '../core/dice/standard';
@@ -34,6 +44,7 @@ import type {
 } from '../core/types';
 import {
   DEFAULT_THEME,
+  MATERIAL_PRESETS,
   materialPhysics,
   parseTheme,
   resolveAppearance,
@@ -71,6 +82,8 @@ export interface DiceEngineOptions {
   quality?: QualitySetting;
   /** Tema padrão. É registrado e passa a valer para dados sem `theme`. */
   theme?: ThemeConfig;
+  /** Sons. Ligado por padrão; nada toca antes de um gesto do usuário. */
+  audio?: AudioOptions;
 }
 
 /** Controle de uma rolagem em andamento. */
@@ -133,6 +146,8 @@ export interface EngineDependencies {
   registry: DieRegistry;
   /** Relógio em milissegundos. */
   now: () => number;
+  /** Áudio. Ausente: desligado. */
+  audio?: DiceAudio;
 }
 
 interface Playback {
@@ -192,12 +207,18 @@ export class DiceEngine {
   private defaultThemeId = DEFAULT_THEME.id;
   /** Temas pedidos e não registrados, já avisados no console. */
   private readonly warnedThemes = new Set<string>();
+  /** Perfis sonoros pedidos por temas e desconhecidos, já avisados no console. */
+  private readonly warnedProfiles = new Set<string>();
+  private readonly audioPlayer: DiceAudio;
   private active: ActiveRoll | undefined;
   private destroyed = false;
 
   /** Uso interno e em testes. Aplicações devem usar {@link DiceEngine.create}. */
   constructor(deps: EngineDependencies) {
     this.deps = deps;
+    this.audioPlayer =
+      deps.audio ??
+      new DiceAudio({ enabled: false }, browserAudioEnvironment(), { surface: 'wood' });
   }
 
   /** Cria um motor dentro de `container`, desenhando em um canvas transparente. */
@@ -205,13 +226,15 @@ export class DiceEngine {
     container: HTMLElement,
     options: DiceEngineOptions = {},
   ): Promise<DiceEngine> {
-    // Valida o tema antes de criar o contexto WebGL.
+    // Valida o tema e o áudio antes de criar o contexto WebGL.
     const theme = options.theme === undefined ? undefined : parseTheme(options.theme);
+    const audioOptions = parseAudioOptions(options.audio);
+    const presentation = options.presentation ?? 'overlay';
     const renderer = new DiceRenderer(container, {
       diceSizePx: options.diceSizePx ?? 72,
       maxPixelRatio: options.maxPixelRatio ?? 2,
       quality: options.quality ?? 'auto',
-      presentation: options.presentation ?? 'overlay',
+      presentation,
     });
     try {
       const simulator = await createPhysicsSimulator(options.physics);
@@ -222,6 +245,10 @@ export class DiceEngine {
         rng: options.rng ?? createCryptoRandomSource(),
         registry: createStandardRegistry(),
         now: () => performance.now(),
+        // Overlay: os dados caem sobre a mesa do VTT (madeira). Bandeja: feltro.
+        audio: new DiceAudio(audioOptions, browserAudioEnvironment(), {
+          surface: presentation === 'tray' ? 'felt' : 'wood',
+        }),
       });
       if (theme) {
         engine.registerTheme(theme);
@@ -266,6 +293,9 @@ export class DiceEngine {
 
     if (this.active) this.finishCancelled(this.active, 'superseded');
     this.removeTableDice();
+    this.audioPlayer.stopAll();
+    // Rolar costuma ser um clique: aproveita o gesto para liberar o áudio.
+    this.audioPlayer.unlockIfGesture();
 
     let resolve!: (outcome: RollOutcome) => void;
     const result = new Promise<RollOutcome>((r) => {
@@ -300,6 +330,7 @@ export class DiceEngine {
     if (this.destroyed) return;
     if (this.active) this.finishCancelled(this.active, 'cleared');
     this.removeTableDice();
+    this.audioPlayer.stopAll();
     this.deps.renderer.render();
   }
 
@@ -359,6 +390,14 @@ export class DiceEngine {
     return theme === undefined ? undefined : parseTheme(theme);
   }
 
+  /**
+   * Controles do áudio: ligar e desligar, volume, superfície, desbloqueio e
+   * sons especiais. O áudio nunca muda um resultado.
+   */
+  get audio(): DiceAudioControls {
+    return this.audioPlayer;
+  }
+
   /** Qualidade efetiva do render, depois de resolver `auto`. */
   get quality(): RenderQuality {
     return this.deps.renderer.quality;
@@ -389,6 +428,7 @@ export class DiceEngine {
     if (this.active) this.finishCancelled(this.active, 'destroyed');
     this.removeTableDice();
     this.destroyed = true;
+    this.audioPlayer.dispose();
     this.deps.renderer.dispose();
     this.emitter.clear();
   }
@@ -470,6 +510,7 @@ export class DiceEngine {
         ...metadataOf(plan.metadata),
       });
       if (active.finished) return;
+      this.scheduleSounds(plan, recording, themes);
       renderer.startLoop(() => {
         this.onFrame(active);
       });
@@ -630,6 +671,7 @@ export class DiceEngine {
   private finishCancelled(active: ActiveRoll, reason: RollCancelReason): void {
     if (active.finished) return;
     this.settle(active);
+    this.audioPlayer.stopAll();
     this.removeTableDice();
     this.deps.renderer.render();
     const outcome = {
@@ -645,6 +687,7 @@ export class DiceEngine {
   private finishFailed(active: ActiveRoll, error: DiceError): void {
     if (active.finished) return;
     this.settle(active);
+    this.audioPlayer.stopAll();
     // Nunca deixa na tela um dado cujo valor não pôde ser garantido.
     this.removeTableDice();
     this.deps.renderer.render();
@@ -696,6 +739,47 @@ export class DiceEngine {
       );
     }
     return this.defaultTheme;
+  }
+
+  /**
+   * Agenda os sons da rolagem a partir da gravação. Só roda com o áudio
+   * tocando, e uma falha aqui nunca derruba a rolagem: o som é acessório.
+   */
+  private scheduleSounds(
+    plan: RollPlan,
+    recording: SimulationRecording,
+    themes: readonly ThemeConfig[],
+  ): void {
+    if (!this.audioPlayer.running) return;
+    try {
+      const events = planRollSounds({
+        recording,
+        dice: plan.dice.map((die, i) => ({
+          dieId: die.dieId,
+          definition: die.definition,
+          profile: this.soundProfileOf(themes[i]!),
+        })),
+        surface: this.audioPlayer.surface,
+        seed: plan.seed,
+      });
+      this.audioPlayer.scheduleRoll(events);
+    } catch (error) {
+      console.warn('[3dados] Falha ao agendar os sons da rolagem:', error);
+    }
+  }
+
+  /** Perfil sonoro de um tema: o do tema, ou o do material. */
+  private soundProfileOf(theme: ThemeConfig): SoundProfile {
+    const fallback = MATERIAL_PRESETS[theme.material].soundProfile;
+    const requested = theme.soundProfile ?? fallback;
+    if (isSoundProfile(requested)) return requested;
+    if (!this.warnedProfiles.has(requested)) {
+      this.warnedProfiles.add(requested);
+      console.warn(
+        `[3dados] Perfil sonoro "${requested}" desconhecido; usando o do material ("${fallback}").`,
+      );
+    }
+    return isSoundProfile(fallback) ? fallback : 'plastic';
   }
 
   /** Redesenha os dados na mesa com os temas atuais. Só aparência: nada se move. */

@@ -4,6 +4,35 @@ O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/). Enq
 
 ## [Não lançado]
 
+## [0.6.0] — 2026-11-24
+
+Etapa 6 — Sonorização.
+
+### Adicionado
+
+- Áudio contextual com Web Audio: lançamento, impactos (dado contra dado e contra a mesa), tombos de dados rolando e estabilização. O som considera material, superfície, intensidade, dados em movimento e intervalo entre impactos, com variação de ganho e de altura.
+- Opção `audio` de `DiceEngine.create` (`enabled`, `volume`, `baseUrl`, `surface`, `maxVoices`, `autoUnlock`) e `engine.audio` (`setEnabled`, `setVolume`, `setSurface`, `unlock`, `play`, `playImpact`, `registerSound`, `getStats`).
+- 37 sons CC0 da Kenney ("Impact Sounds" e "Casino Audio") em `assets/sounds/`, em WAV, como arquivos separados do JavaScript, com créditos completos em `assets/CREDITS.md`. `scripts/convert-sounds.js` refaz a conversão.
+- Síntese procedural de reserva, usada sem `baseUrl` ou quando um arquivo não carrega.
+- Limite de vozes (16 por padrão) válido em todo o intervalo de cada som, com troca pela voz mais fraca e compressor no final.
+- Desbloqueio automático no primeiro clique ou tecla; com o áudio desligado nenhum `AudioContext` é criado.
+- Sons especiais `bell` e `thud`, e sons da aplicação por `registerSound`.
+- `ThemeConfig.soundProfile` passa a ter efeito. Exportados `SOUND_PROFILES`, `SURFACES`, `BUILTIN_SOUNDS` e `intensityToGain`.
+- Código de erro `ASSET_LOAD_FAILED`.
+- Playground: painel de áudio (ligar, volume, superfície, impactos de teste por perfil, sons especiais, vozes e contadores medidos) e campo de perfil sonoro no painel de personalização. `?audio=off` cria o motor sem áudio.
+- Medição do custo do planejamento dos sons em `npm run bench`.
+
+### Alterado
+
+- `destroy()` também fecha o `AudioContext`.
+- O playground serve `assets/` como pasta pública.
+
+### Limitações conhecidas
+
+- Para ouvir as amostras, a aplicação precisa servir `assets/sounds/` e informar `audio.baseUrl`; sem isso, ouve a síntese.
+- Com muitos dados, parte dos sons mais fracos não toca por causa do limite de vozes.
+- A qualidade sonora não é verificável por teste automático.
+
 ## [0.5.0] — 2026-11-24
 
 Etapa 5 — Materiais e temas.

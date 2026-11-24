@@ -151,6 +151,29 @@ Leituras:
 - A duração p95 da pedra (2,74 s) é a maior: dados empurrados voltam a rolar.
 - Os tempos de CPU variam cerca de duas vezes entre execuções, como nas demais medições; valem as ordens de grandeza.
 
+## Áudio (Etapa 6)
+
+Mesma máquina das demais medições (ver "Ambiente"). Node, área 26×15, dados de tipos alternados (d6, d20, d8, d12, d10, d4), perfil plástico sobre madeira, 100 rolagens por caso. Mede só o planejamento dos sons (encontrar impactos e tombos na gravação e montar a lista), que roda logo antes do primeiro quadro; a física não muda. Comando:
+
+```sh
+npx vitest run --project bench --silent=false tests/bench/audio-plan.test.ts
+```
+
+| Dados | CPU mediana | CPU p95 | Sons por rolagem (mediana) | Sons cortados pelo limite de 16 vozes ¹ |
+| ----- | ----------- | ------- | -------------------------- | --------------------------------------- |
+| 1     | 0,11 ms     | 0,26 ms | 8                          | 0%                                      |
+| 5     | 0,64 ms     | 0,92 ms | 38                         | 0%                                      |
+| 10    | 1,21 ms     | 1,80 ms | 74                         | 1,4%                                    |
+| 20    | 2,40 ms     | 3,34 ms | 146                        | 23,4%                                   |
+| 30    | 3,99 ms     | 7,90 ms | 229                        | 42,5%                                   |
+
+¹ No reprodutor com o contexto de áudio falso dos testes, em que todo som dura 0,3 s. As amostras reais duram mais, e o corte no navegador é maior.
+
+- **Síntese do banco de reserva:** 76 ms na mediana. É uma estimativa por cima: a medição sintetiza 3 variações de todos os grupos. Só acontece sem `baseUrl` ou quando um arquivo falha, e no desbloqueio, não durante a rolagem.
+- **No navegador** (playground, Chromium do Playwright, mesma máquina): 3 rolagens de 20 dados tocaram 185 sons, com no máximo 16 vozes ao mesmo tempo; 270 sons foram descartados (mais fracos que todas as vozes ocupadas) e 86 vozes foram trocadas por sons mais fortes.
+- **Desbloqueio:** decodificar os 37 arquivos em paralelo levou cerca de 117 ms no playground (em série, cerca de 186 ms). Sons pedidos nesse intervalo são agendados quando o banco fica pronto, se ainda não estiverem mais de 40 ms atrasados.
+- Os tempos de CPU variam cerca de duas vezes entre execuções, como nas demais medições.
+
 ## Convergência por quantidade de dados e área (antes da recuperação)
 
 Uma tentativa é descartada quando algum dado para inclinado ou sobre outro dado. O motor tenta até 12 sementes; se nenhuma serve, a rolagem falha explicitamente (`SIMULATION_FAILED`). 150 rolagens por caso.
